@@ -2222,14 +2222,13 @@ function AdminPanelView({
                     </select>
                   </div>
                   <div className="form-group col">
-                    <label htmlFor="admin-prod-image">Image URL</label>
+                    <label htmlFor="admin-prod-image">Image URL (Optional if file uploaded)</label>
                     <input 
                       type="url" 
                       id="admin-prod-image" 
                       placeholder="https://images.unsplash.com/..."
                       value={newProduct.image_url}
                       onChange={(e) => setNewProduct(prev => ({ ...prev, image_url: e.target.value }))}
-                      required={!productImageFile}
                     />
                   </div>
                   <div className="form-group col">
@@ -2240,7 +2239,6 @@ function AdminPanelView({
                         id="admin-prod-image-file" 
                         accept="image/*"
                         onChange={(e) => setProductImageFile(e.target.files[0])}
-                        required={!newProduct.image_url}
                       />
                       <div className="upload-dummy-btn" style={{ fontSize: '13px', padding: '10px' }}>
                         {productImageFile ? `Selected: ${productImageFile.name}` : 'Choose product image file'}
