@@ -76,20 +76,59 @@ async function broadcastNotification(notificationData) {
   }
 }
 
-// Configure Multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    let prefix = 'screenshot-';
-    if (file.fieldname === 'product_image') prefix = 'product-';
-    if (file.fieldname === 'qr_image') prefix = 'qr-';
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, prefix + uniqueSuffix + path.extname(file.originalname));
-  }
+const cloudinary = require('cloudinary').v2;
+
+// Cloudinary Configuration
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
 });
+
+// Configure Multer to use memory storage
+const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
+
+// Helper to upload file buffer to Cloudinary (or local filesystem fallback)
+const handleImageUpload = async (reqFile, folder = 'general', customPrefix = 'file') => {
+  if (!reqFile) return null;
+
+  const isCloudinaryConfigured = 
+    process.env.CLOUDINARY_CLOUD_NAME && 
+    process.env.CLOUDINARY_API_KEY && 
+    process.env.CLOUDINARY_API_SECRET;
+
+  if (isCloudinaryConfigured) {
+    try {
+      return await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          { folder: `ott_nexus/${folder}` },
+          (error, result) => {
+            if (error) {
+              console.error('[Cloudinary Upload Error]:', error);
+              return reject(error);
+            }
+            resolve(result.secure_url);
+          }
+        );
+        uploadStream.end(reqFile.buffer);
+      });
+    } catch (err) {
+      console.error('[Cloudinary Stream Exception]:', err);
+      throw err;
+    }
+  } else {
+    // Local fallback storage
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const fileExt = path.extname(reqFile.originalname) || '.jpg';
+    const filename = `${customPrefix}-${uniqueSuffix}${fileExt}`;
+    const destinationPath = path.join(uploadsDir, filename);
+
+    await fs.promises.writeFile(destinationPath, reqFile.buffer);
+    console.log(`[Storage Fallback] Saved file locally: ${filename}`);
+    return `/uploads/${filename}`;
+  }
+};
 
 // Authentication Guards
 const { requireAuth, requireAdmin } = require('./authMiddleware');
@@ -362,7 +401,11 @@ app.post('/api/products', requireAdmin, upload.single('product_image'), async (r
 
   let finalImageUrl = image_url;
   if (req.file) {
-    finalImageUrl = `/uploads/${req.file.filename}`;
+    try {
+      finalImageUrl = await handleImageUpload(req.file, 'products', 'product');
+    } catch (uploadErr) {
+      return res.status(500).json({ error: 'Failed to upload product image.' });
+    }
   }
 
   if (!name || !description || !price || !category || !platform || !finalImageUrl) {
@@ -426,7 +469,11 @@ app.put('/api/products/:id', requireAdmin, upload.single('product_image'), async
 
   let finalImageUrl = image_url;
   if (req.file) {
-    finalImageUrl = `/uploads/${req.file.filename}`;
+    try {
+      finalImageUrl = await handleImageUpload(req.file, 'products', 'product');
+    } catch (uploadErr) {
+      return res.status(500).json({ error: 'Failed to upload product image.' });
+    }
   }
 
   if (!name || !description || !price || !category || !platform || !finalImageUrl) {
@@ -512,11 +559,18 @@ app.post('/api/checkout', requireAuth, upload.single('screenshot'), async (req, 
       return res.status(404).json({ error: 'Product not found.' });
     }
 
-    const screenshotPath = req.file ? `/uploads/${req.file.filename}` : null;
+    let screenshotPath = null;
+    if (req.file) {
+      try {
+        screenshotPath = await handleImageUpload(req.file, 'screenshots', 'screenshot');
+      } catch (uploadErr) {
+        return res.status(500).json({ error: 'Failed to upload payment screenshot.' });
+      }
+    }
 
     if (existingOrder) {
-      // Clean up old screenshot if we have a new one
-      if (screenshotPath && existingOrder.screenshot_path) {
+      // Clean up old screenshot if we have a new one (only if it was local)
+      if (screenshotPath && existingOrder.screenshot_path && existingOrder.screenshot_path.startsWith('/uploads/')) {
         const oldFilename = path.basename(existingOrder.screenshot_path);
         const oldLocalPath = path.join(uploadsDir, oldFilename);
         fs.unlink(oldLocalPath, (err) => {
@@ -1053,7 +1107,11 @@ app.put('/api/admin/settings', requireAdmin, upload.single('qr_image'), async (r
 
     let finalQrUrl = upi_qr_url;
     if (req.file) {
-      finalQrUrl = `/uploads/${req.file.filename}`;
+      try {
+        finalQrUrl = await handleImageUpload(req.file, 'qrcodes', 'qr');
+      } catch (uploadErr) {
+        return res.status(500).json({ error: 'Failed to upload QR code image.' });
+      }
     }
 
     if (finalQrUrl !== undefined) {
