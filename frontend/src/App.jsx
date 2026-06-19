@@ -1680,10 +1680,19 @@ function AdminPanelView({
 
   const handleSaveSettings = (e) => {
     e.preventDefault();
+    
+    // Check if custom QR is configured (either by local file upload or custom URL)
+    const hasCustomQR = qrImageFile || upiQrUrlInput.trim();
+    
+    const modalTitle = hasCustomQR ? 'Confirm Settings Modification' : 'Confirm Settings (No Custom QR)';
+    const modalMessage = hasCustomQR
+      ? 'Are you sure you want to save these system settings? This will update system-wide configurations, including payment UPI details and email credentials.'
+      : 'You have not uploaded a custom QR image file or specified a custom QR URL. The payment gateway will automatically fall back to generating a dynamic QR code based on your UPI address. Are you sure you want to continue?';
+
     setConfirmModal({
       show: true,
-      title: 'Confirm Settings Modification',
-      message: 'Are you sure you want to save these system settings? This will update system-wide configurations, including payment UPI details and email credentials.',
+      title: modalTitle,
+      message: modalMessage,
       requireTextConfirm: true,
       confirmInput: '',
       onConfirm: async () => {
@@ -1721,6 +1730,35 @@ function AdminPanelView({
           if (fileInput) fileInput.value = '';
           loadSettings();
         } catch (err) {}
+      }
+    });
+  };
+
+  const handleRemoveCustomQR = () => {
+    setConfirmModal({
+      show: true,
+      title: 'Remove Custom QR Code',
+      message: 'Are you sure you want to remove the custom QR code image? This will clear the custom image setting and restore the auto-generated dynamic QR code based on your UPI ID. You must type CONFIRM to proceed.',
+      requireTextConfirm: true,
+      confirmInput: '',
+      onConfirm: async () => {
+        try {
+          const data = await apiRequest('/api/admin/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              upi_qr_url: '' // Clears the custom QR URL on the server
+            })
+          });
+          showToast('Custom QR code removed. Auto-generated QR restored.', 'success');
+          setUpiQrUrlInput('');
+          setQrImageFile(null);
+          const fileInput = document.getElementById('admin-qr-image-file');
+          if (fileInput) fileInput.value = '';
+          loadSettings();
+        } catch (err) {
+          showToast(err.message || 'Failed to remove custom QR code', 'error');
+        }
       }
     });
   };
@@ -2397,6 +2435,19 @@ function AdminPanelView({
                   </div>
                   <span className="input-help">Will be saved to server and override the image URL.</span>
                 </div>
+
+                {settings?.upi_qr_url && (
+                  <div className="form-group" style={{ marginTop: '10px' }}>
+                    <button 
+                      type="button" 
+                      className="btn btn-sm btn-danger" 
+                      style={{ width: '100%' }}
+                      onClick={handleRemoveCustomQR}
+                    >
+                      Remove Custom QR Code
+                    </button>
+                  </div>
+                )}
 
                 <div className="form-group" style={{ marginTop: '15px', borderTop: '1px solid var(--border-color)', paddingTop: '15px' }}>
                   <label htmlFor="admin-settings-resend-api-key">Resend API Key</label>
