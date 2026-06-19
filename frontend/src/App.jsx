@@ -1430,8 +1430,20 @@ function AdminPanelView({
   setConfirmModal
 }) {
   const [productImageFile, setProductImageFile] = useState(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState('');
   const [currencySelect, setCurrencySelect] = useState('$');
   const [editingProduct, setEditingProduct] = useState(null);
+
+  useEffect(() => {
+    if (!productImageFile) {
+      setImagePreviewUrl('');
+      return;
+    }
+    const objectUrl = URL.createObjectURL(productImageFile);
+    setImagePreviewUrl(objectUrl);
+
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [productImageFile]);
 
   const [upiIdInput, setUpiIdInput] = useState(settings?.upi_id || '');
   const [upiQrUrlInput, setUpiQrUrlInput] = useState(settings?.upi_qr_url || '');
@@ -2246,6 +2258,39 @@ function AdminPanelView({
                     </div>
                   </div>
                 </div>
+
+                {/* PRODUCT IMAGE PREVIEW */}
+                {(imagePreviewUrl || newProduct.image_url) && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px', padding: '0 15px' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Image Preview (Cropping & Aspect Ratio Guidance)</span>
+                    <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div style={{ 
+                        border: '1px solid var(--border-color)', 
+                        borderRadius: '6px', 
+                        padding: '10px', 
+                        backgroundColor: 'var(--bg-surface-elevated)', 
+                        width: '160px',
+                        height: '160px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        overflow: 'hidden'
+                      }}>
+                        <img 
+                          src={imagePreviewUrl || newProduct.image_url} 
+                          alt="Product Preview" 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '4px' }} 
+                        />
+                      </div>
+                      <div style={{ flex: 1, minWidth: '250px' }}>
+                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0, lineHeight: '1.5' }}>
+                          The preview box shows how the image will be cropped and centered using an aspect ratio of <strong>1:1 (Square)</strong> in the storefront grids. For optimal results, upload a square image (e.g. 400x400 pixels) or ensure the logo is centered.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '10px' }}>
                   <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
                     {editingProduct ? 'Save Changes' : 'Add Product to Store'}
