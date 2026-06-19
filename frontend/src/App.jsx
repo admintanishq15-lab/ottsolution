@@ -1678,42 +1678,51 @@ function AdminPanelView({
     });
   };
 
-  const handleSaveSettings = async (e) => {
+  const handleSaveSettings = (e) => {
     e.preventDefault();
-    try {
-      let data;
-      if (qrImageFile) {
-        const formData = new FormData();
-        formData.append('upi_id', upiIdInput);
-        formData.append('qr_image', qrImageFile);
-        if (upiQrUrlInput) {
-          formData.append('upi_qr_url', upiQrUrlInput);
-        }
-        formData.append('resend_api_key', resendApiKeyInput);
-        formData.append('email_from', emailFromInput);
-        data = await apiRequest('/api/admin/settings', {
-          method: 'PUT',
-          body: formData
-        });
-      } else {
-        data = await apiRequest('/api/admin/settings', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            upi_id: upiIdInput,
-            upi_qr_url: upiQrUrlInput,
-            resend_api_key: resendApiKeyInput,
-            email_from: emailFromInput
-          })
-        });
-      }
+    setConfirmModal({
+      show: true,
+      title: 'Confirm Settings Modification',
+      message: 'Are you sure you want to save these system settings? This will update system-wide configurations, including payment UPI details and email credentials.',
+      requireTextConfirm: true,
+      confirmInput: '',
+      onConfirm: async () => {
+        try {
+          let data;
+          if (qrImageFile) {
+            const formData = new FormData();
+            formData.append('upi_id', upiIdInput);
+            formData.append('qr_image', qrImageFile);
+            if (upiQrUrlInput) {
+              formData.append('upi_qr_url', upiQrUrlInput);
+            }
+            formData.append('resend_api_key', resendApiKeyInput);
+            formData.append('email_from', emailFromInput);
+            data = await apiRequest('/api/admin/settings', {
+              method: 'PUT',
+              body: formData
+            });
+          } else {
+            data = await apiRequest('/api/admin/settings', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                upi_id: upiIdInput,
+                upi_qr_url: upiQrUrlInput,
+                resend_api_key: resendApiKeyInput,
+                email_from: emailFromInput
+              })
+            });
+          }
 
-      showToast(data.message, 'success');
-      setQrImageFile(null);
-      const fileInput = document.getElementById('admin-qr-image-file');
-      if (fileInput) fileInput.value = '';
-      loadSettings();
-    } catch (err) {}
+          showToast(data.message, 'success');
+          setQrImageFile(null);
+          const fileInput = document.getElementById('admin-qr-image-file');
+          if (fileInput) fileInput.value = '';
+          loadSettings();
+        } catch (err) {}
+      }
+    });
   };
 
   // --- Bulk UTR Reconciliation Helper ---
