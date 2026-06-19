@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ottsolution-cache-v1';
+const CACHE_NAME = 'ottsolution-cache-v2';
 const ASSETS = [
   '/',
   '/index.html',
@@ -11,7 +11,7 @@ self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS);
-    })
+    }).then(() => self.skipWaiting())
   );
 });
 
@@ -25,7 +25,7 @@ self.addEventListener('activate', (e) => {
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
 });
 

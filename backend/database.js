@@ -118,6 +118,10 @@ async function seedDefaultData() {
     const upiIdExists = await Setting.findOne({ key: 'upi_id' });
     if (!upiIdExists) {
       await new Setting({ key: 'upi_id', value: process.env.UPI_ID || 'pay@ottsolution' }).save();
+    } else if (upiIdExists.value.includes('nexus') || upiIdExists.value.includes('nexsus')) {
+      upiIdExists.value = process.env.UPI_ID || 'pay@ottsolution';
+      await upiIdExists.save();
+      console.log(`[Database] Updated legacy upi_id to: ${upiIdExists.value}`);
     }
     const upiQrExists = await Setting.findOne({ key: 'upi_qr_url' });
     if (!upiQrExists) {

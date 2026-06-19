@@ -288,8 +288,9 @@ export default function App() {
   };
 
   // --- Copy Clipboard Helper ---
-  const handleCopyUPI = () => {
-    navigator.clipboard.writeText('pay@ottsolution').then(() => {
+  const handleCopyUPI = (upiId) => {
+    const textToCopy = typeof upiId === 'string' ? upiId : (settings?.upi_id || 'pay@ottsolution');
+    navigator.clipboard.writeText(textToCopy).then(() => {
       showToast('UPI ID copied to clipboard!', 'success');
     }).catch(() => {
       showToast('Failed to copy', 'error');
