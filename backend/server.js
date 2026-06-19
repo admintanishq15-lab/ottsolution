@@ -8,7 +8,7 @@ const fs = require('fs');
 
 // Connect Mongoose
 const mongoose = require('./database');
-const { User, Product, Order, ProductKey, Setting } = require('./models');
+const { User, Product, Order, ProductKey, Setting, Notification, OttPlatform, Visit } = require('./models');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,6 +42,40 @@ app.use(
   })
 );
 
+// --- SSE Live Notification Support ---
+let sseClients = [];
+
+async function broadcastNotification(notificationData) {
+  try {
+    const notification = new Notification({
+      title: notificationData.title,
+      message: notificationData.message,
+      type: notificationData.type,
+      isAdminOnly: !!notificationData.isAdminOnly
+    });
+    await notification.save();
+
+    const payload = JSON.stringify({
+      id: notification._id.toString(),
+      title: notification.title,
+      message: notification.message,
+      type: notification.type,
+      isAdminOnly: notification.isAdminOnly,
+      created_at: notification.created_at
+    });
+
+    sseClients.forEach(client => {
+      // If notification is admin-only, only send to admin clients
+      if (notificationData.isAdminOnly && !client.isAdmin) {
+        return;
+      }
+      client.res.write(`data: ${payload}\n\n`);
+    });
+  } catch (err) {
+    console.error('[Notification Broadcast Error]:', err);
+  }
+}
+
 // Configure Multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -61,8 +95,9 @@ const upload = multer({ storage: storage });
 const { requireAuth, requireAdmin } = require('./authMiddleware');
 
 // 2. Serializers / Mapping helpers for frontend compatibility
-const serializeProduct = (p) => {
+const serializeProduct = async (p) => {
   if (!p) return null;
+  const activeKeysCount = await ProductKey.countDocuments({ product_id: p._id, is_used: false });
   return {
     id: p._id.toString(),
     name: p.name,
@@ -71,7 +106,11 @@ const serializeProduct = (p) => {
     currency: p.currency,
     category: p.category,
     platform: p.platform,
-    image_url: p.image_url
+    image_url: p.image_url,
+    setup_type: p.setup_type || '',
+    duration: p.duration || '',
+    stock_type: p.stock_type || 'code',
+    stock_count: activeKeysCount
   };
 };
 
@@ -80,10 +119,12 @@ const serializeOrder = async (o) => {
   
   // Find claimed key/link if approved
   let keyVal = null;
+  let keyType = null;
   if (o.status === 'approved') {
     const keyDoc = await ProductKey.findOne({ order_id: o._id });
     if (keyDoc) {
       keyVal = keyDoc.key_value;
+      keyType = keyDoc.type || 'code';
     }
   }
 
@@ -103,7 +144,8 @@ const serializeOrder = async (o) => {
     is_verified: o.is_verified || 'unchecked',
     rejection_reason: o.rejection_reason,
     created_at: o.created_at,
-    key_value: keyVal
+    key_value: keyVal,
+    key_type: keyType
   };
 };
 
@@ -257,6 +299,10 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Invalid email or password.' });
     }
 
+    if (user.is_banned) {
+      return res.status(403).json({ error: 'Forbidden. Your account has been banned.' });
+    }
+
     const passwordMatch = bcrypt.compareSync(password, user.password_hash);
     if (!passwordMatch) {
       return res.status(400).json({ error: 'Invalid email or password.' });
@@ -303,7 +349,8 @@ app.get('/api/auth/me', (req, res) => {
 app.get('/api/products', async (req, res) => {
   try {
     const products = await Product.find();
-    res.json(products.map(serializeProduct));
+    const serialized = await Promise.all(products.map(serializeProduct));
+    res.json(serialized);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch products.' });
@@ -311,7 +358,7 @@ app.get('/api/products', async (req, res) => {
 });
 
 app.post('/api/products', requireAdmin, upload.single('product_image'), async (req, res) => {
-  const { name, description, price, currency, category, platform, image_url } = req.body;
+  const { name, description, price, currency, category, platform, image_url, setup_type, duration, stock_type } = req.body;
 
   let finalImageUrl = image_url;
   if (req.file) {
@@ -332,9 +379,20 @@ app.post('/api/products', requireAdmin, upload.single('product_image'), async (r
       currency: currencySymbol,
       category,
       platform,
-      image_url: finalImageUrl
+      image_url: finalImageUrl,
+      setup_type: setup_type || '',
+      duration: duration || '',
+      stock_type: stock_type || 'code'
     });
     await product.save();
+
+    // Broadcast new product notification
+    await broadcastNotification({
+      title: 'New Product Available!',
+      message: `${product.name} is now available in our store for only ${product.currency}${product.price}!`,
+      type: 'new_product',
+      isAdminOnly: false
+    });
 
     res.status(201).json({
       message: 'Product added successfully',
@@ -363,7 +421,7 @@ app.delete('/api/products/:id', requireAdmin, async (req, res) => {
 });
 
 app.put('/api/products/:id', requireAdmin, upload.single('product_image'), async (req, res) => {
-  const { name, description, price, currency, category, platform, image_url } = req.body;
+  const { name, description, price, currency, category, platform, image_url, setup_type, duration, stock_type } = req.body;
   const productId = req.params.id;
 
   let finalImageUrl = image_url;
@@ -383,15 +441,32 @@ app.put('/api/products/:id', requireAdmin, upload.single('product_image'), async
       return res.status(404).json({ error: 'Product not found.' });
     }
 
+    const oldPrice = product.price;
+    const newPrice = parseFloat(price);
+    const priceChanged = oldPrice !== newPrice;
+
     product.name = name;
     product.description = description;
-    product.price = parseFloat(price);
+    product.price = newPrice;
     product.currency = currencySymbol;
     product.category = category;
     product.platform = platform;
     product.image_url = finalImageUrl;
+    product.setup_type = setup_type || '';
+    product.duration = duration || '';
+    product.stock_type = stock_type || 'code';
 
     await product.save();
+
+    if (priceChanged) {
+      await broadcastNotification({
+        title: 'Price Update Alert!',
+        message: `The price of ${product.name} has been updated to ${product.currency}${product.price} (previously ${product.currency}${oldPrice}).`,
+        type: 'price_update',
+        isAdminOnly: false
+      });
+    }
+
     res.json({ message: 'Product updated successfully' });
   } catch (err) {
     console.error(err);
@@ -399,6 +474,7 @@ app.put('/api/products/:id', requireAdmin, upload.single('product_image'), async
   }
 });
 
+// 6. Checkout and Orders API (Users)
 // 6. Checkout and Orders API (Users)
 app.post('/api/checkout', requireAuth, upload.single('screenshot'), async (req, res) => {
   const { product_id, utr_number } = req.body;
@@ -408,18 +484,29 @@ app.post('/api/checkout', requireAuth, upload.single('screenshot'), async (req, 
   }
 
   const utrClean = utr_number.trim();
-  if (utrClean.length < 8) {
-    return res.status(400).json({ error: 'Please enter a valid Transaction ID/UTR (minimum 8 characters).' });
+  if (utrClean.length < 12) {
+    return res.status(400).json({ error: 'Please enter a valid Transaction ID/UTR (minimum 12 characters).' });
   }
 
   try {
-    // Check if UTR is already used
+    // Check if user already has an existing pending or rejected order for this product
+    const existingOrder = await Order.findOne({
+      user_id: req.session.userId,
+      product_id: product_id,
+      status: { $in: ['pending', 'rejected'] }
+    });
+
+    // Check if the UTR is already used by ANOTHER order
     const duplicate = await Order.findOne({ utr_number: utrClean });
     if (duplicate) {
-      return res.status(400).json({ error: 'This UTR has already been submitted for another order. Re-use is not allowed.' });
+      if (!existingOrder || duplicate._id.toString() !== existingOrder._id.toString()) {
+        return res.status(400).json({ error: 'This UTR has already been submitted for another order. Re-use is not allowed.' });
+      } else {
+        return res.status(400).json({ error: 'This UTR has already been submitted. Please enter a different, valid UTR or contact support.' });
+      }
     }
 
-    // Get product price
+    // Get product details
     const product = await Product.findById(product_id);
     if (!product) {
       return res.status(404).json({ error: 'Product not found.' });
@@ -427,21 +514,67 @@ app.post('/api/checkout', requireAuth, upload.single('screenshot'), async (req, 
 
     const screenshotPath = req.file ? `/uploads/${req.file.filename}` : null;
 
-    const order = new Order({
-      user_id: req.session.userId,
-      product_id: product._id,
-      amount: product.price,
-      currency: product.currency || '$',
-      utr_number: utrClean,
-      screenshot_path: screenshotPath,
-      status: 'pending'
-    });
-    await order.save();
+    if (existingOrder) {
+      // Clean up old screenshot if we have a new one
+      if (screenshotPath && existingOrder.screenshot_path) {
+        const oldFilename = path.basename(existingOrder.screenshot_path);
+        const oldLocalPath = path.join(uploadsDir, oldFilename);
+        fs.unlink(oldLocalPath, (err) => {
+          if (err && err.code !== 'ENOENT') {
+            console.error(`Failed to delete old screenshot: ${oldLocalPath}`, err);
+          }
+        });
+      }
 
-    res.status(201).json({
-      message: 'Order submitted successfully. Verification is pending.',
-      orderId: order._id.toString()
-    });
+      // Update existing order
+      existingOrder.utr_number = utrClean;
+      if (screenshotPath) {
+        existingOrder.screenshot_path = screenshotPath;
+      }
+      existingOrder.status = 'pending';
+      existingOrder.is_verified = 'unchecked';
+      existingOrder.rejection_reason = null;
+      existingOrder.created_at = Date.now();
+      await existingOrder.save();
+
+      // Broadcast admin-only notification of an updated order submission
+      await broadcastNotification({
+        title: 'Order UTR Updated',
+        message: `Order UTR has been updated for ${product.name} by ${req.session.email} | UTR: ${utrClean}`,
+        type: 'new_order',
+        isAdminOnly: true
+      });
+
+      return res.status(200).json({
+        message: 'Order UTR updated successfully. Verification is pending.',
+        orderId: existingOrder._id.toString()
+      });
+    } else {
+      // Create new order
+      const order = new Order({
+        user_id: req.session.userId,
+        product_id: product._id,
+        amount: product.price,
+        currency: product.currency || '$',
+        utr_number: utrClean,
+        screenshot_path: screenshotPath,
+        status: 'pending'
+      });
+      await order.save();
+
+      // Broadcast admin-only notification of a new checkout submission
+      await broadcastNotification({
+        title: 'New Order Placed',
+        message: `A new order has been submitted for ${product.name} by ${req.session.email} | UTR: ${utrClean}`,
+        type: 'new_order',
+        isAdminOnly: true
+      });
+
+      res.status(201).json({
+        message: 'Order submitted successfully. Verification is pending.',
+        orderId: order._id.toString()
+      });
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to process checkout.' });
@@ -510,6 +643,41 @@ app.post('/api/admin/orders/:id/verify', requireAdmin, async (req, res) => {
           order.amount
         );
       }
+
+      // Broadcast public purchase alert (social proof)
+      await broadcastNotification({
+        title: 'New Purchase!',
+        message: `Someone just purchased ${order.product_id.name}!`,
+        type: 'purchase',
+        isAdminOnly: false
+      });
+
+      // Broadcast admin-only order verification details
+      await broadcastNotification({
+        title: 'Order Approved',
+        message: `Order approved for ${order.user_id.email} | Product: ${order.product_id.name} | UTR: ${order.utr_number}`,
+        type: 'order_approved',
+        isAdminOnly: true
+      });
+
+      // Check if product is now out of stock
+      const remainingKeys = await ProductKey.countDocuments({ product_id: order.product_id._id, is_used: false });
+      if (remainingKeys === 0) {
+        await broadcastNotification({
+          title: 'Out of Stock',
+          message: `${order.product_id.name} is now out of stock.`,
+          type: 'out_of_stock',
+          isAdminOnly: false
+        });
+      }
+    } else if (status === 'rejected') {
+      // Broadcast admin-only rejection details
+      await broadcastNotification({
+        title: 'Order Rejected',
+        message: `Order rejected for ${order.user_id.email} | Product: ${order.product_id.name} | Reason: ${rejection_reason || 'No reason specified'}`,
+        type: 'order_rejected',
+        isAdminOnly: true
+      });
     }
 
     res.json({
@@ -537,6 +705,51 @@ app.delete('/api/admin/orders/:id', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to delete order.' });
+  }
+});
+
+app.put('/api/admin/orders/:id/utr', requireAdmin, async (req, res) => {
+  const { utr_number } = req.body;
+  const orderId = req.params.id;
+
+  if (!utr_number) {
+    return res.status(400).json({ error: 'UTR number is required.' });
+  }
+
+  const utrClean = utr_number.trim();
+  if (utrClean.length < 12) {
+    return res.status(400).json({ error: 'Please enter a valid Transaction ID/UTR (minimum 12 characters).' });
+  }
+
+  try {
+    // Check duplicate UTR across other orders
+    const duplicate = await Order.findOne({ utr_number: utrClean, _id: { $ne: orderId } });
+    if (duplicate) {
+      return res.status(400).json({ error: 'This UTR has already been submitted for another order. Re-use is not allowed.' });
+    }
+
+    const order = await Order.findById(orderId).populate('product_id user_id');
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found.' });
+    }
+
+    order.utr_number = utrClean;
+    order.is_verified = 'unchecked';
+    
+    // Reset status to pending if previously rejected
+    if (order.status === 'rejected') {
+      order.status = 'pending';
+      order.rejection_reason = null;
+    }
+    await order.save();
+
+    res.json({ 
+      message: 'Order UTR updated successfully.', 
+      order: await serializeOrder(order) 
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update order UTR.' });
   }
 });
 
@@ -619,6 +832,7 @@ app.get('/api/admin/products/:id/keys', requireAdmin, async (req, res) => {
       return {
         id: k._id.toString(),
         key_value: k.key_value,
+        type: k.type || 'code',
         is_used: k.is_used,
         order_id: k.order_id?._id?.toString() || null,
         order_utr: k.order_id?.utr_number || null,
@@ -635,7 +849,7 @@ app.get('/api/admin/products/:id/keys', requireAdmin, async (req, res) => {
 });
 
 app.post('/api/admin/products/:id/keys', requireAdmin, async (req, res) => {
-  const { keys_text } = req.body;
+  const { keys_text, type } = req.body;
   if (!keys_text) {
     return res.status(400).json({ error: 'Keys text is required.' });
   }
@@ -654,13 +868,26 @@ app.post('/api/admin/products/:id/keys', requireAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Product not found.' });
     }
 
+    const activeKeysBefore = await ProductKey.countDocuments({ product_id: product._id, is_used: false });
+
     const newKeys = keys.map(k => ({
       product_id: product._id,
       key_value: k,
+      type: type || 'code',
       is_used: false
     }));
 
     await ProductKey.insertMany(newKeys);
+
+    if (activeKeysBefore === 0) {
+      await broadcastNotification({
+        title: 'Back in Stock!',
+        message: `${product.name} is now back in stock! Grab yours before it runs out.`,
+        type: 'back_in_stock',
+        isAdminOnly: false
+      });
+    }
+
     res.status(201).json({ message: `Successfully added ${keys.length} keys/invite links to inventory.` });
   } catch (err) {
     console.error(err);
@@ -678,6 +905,109 @@ app.delete('/api/admin/keys/:keyId', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to delete key.' });
+  }
+});
+
+app.put('/api/admin/keys/:keyId', requireAdmin, async (req, res) => {
+  const { key_value, type } = req.body;
+  try {
+    const keyDoc = await ProductKey.findById(req.params.keyId);
+    if (!keyDoc) {
+      return res.status(404).json({ error: 'Key not found.' });
+    }
+    if (key_value !== undefined) {
+      keyDoc.key_value = key_value.trim();
+    }
+    if (type !== undefined) {
+      keyDoc.type = type;
+    }
+    await keyDoc.save();
+    res.json({ message: 'Key updated successfully from inventory.', key: keyDoc });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update key.' });
+  }
+});
+
+app.post('/api/visits', async (req, res) => {
+  try {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+    const visit = new Visit({ ip });
+    await visit.save();
+    res.status(201).json({ message: 'Visit logged' });
+  } catch (err) {
+    console.error('Failed to log visit:', err);
+    res.status(500).json({ error: 'Failed to log visit' });
+  }
+});
+
+app.get('/api/admin/analytics', requireAdmin, async (req, res) => {
+  try {
+    const totalVisits = await Visit.countDocuments();
+    const totalUsers = await User.countDocuments();
+    const totalOrders = await Order.countDocuments();
+    
+    const approvedOrders = await Order.find({ status: 'approved' });
+    const totalRevenue = approvedOrders.reduce((sum, order) => sum + (order.amount || 0), 0);
+
+    res.json({
+      visits: totalVisits,
+      users: totalUsers,
+      orders: totalOrders,
+      revenue: totalRevenue
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch analytics.' });
+  }
+});
+
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
+  try {
+    const users = await User.find().sort({ email: 1 });
+    const serializedUsers = users.map(u => ({
+      id: u._id.toString(),
+      email: u.email,
+      role: u.role,
+      is_banned: !!u.is_banned
+    }));
+    res.json(serializedUsers);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch users list.' });
+  }
+});
+
+app.post('/api/admin/users/:id/ban', requireAdmin, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    if (user.role === 'admin') {
+      return res.status(400).json({ error: 'Cannot ban an admin user.' });
+    }
+    user.is_banned = true;
+    await user.save();
+    res.json({ message: `User ${user.email} has been successfully banned.` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to ban user.' });
+  }
+});
+
+app.post('/api/admin/users/:id/unban', requireAdmin, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    user.is_banned = false;
+    await user.save();
+    res.json({ message: `User ${user.email} has been successfully unbanned.` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to unban user.' });
   }
 });
 
@@ -742,6 +1072,85 @@ app.put('/api/admin/settings', requireAdmin, upload.single('qr_image'), async (r
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to update settings.' });
+  }
+});
+
+// --- SSE Notification Endpoints ---
+app.get('/api/notifications/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const isAdmin = req.session && req.session.role === 'admin';
+  const client = { res, isAdmin };
+  sseClients.push(client);
+
+  res.write(': heartbeat\n\n');
+
+  const interval = setInterval(() => {
+    res.write(': heartbeat\n\n');
+  }, 30000);
+
+  req.on('close', () => {
+    clearInterval(interval);
+    sseClients = sseClients.filter(c => c.res !== res);
+  });
+});
+
+app.get('/api/notifications', async (req, res) => {
+  try {
+    const isAdmin = req.session && req.session.role === 'admin';
+    let query = {};
+    if (!isAdmin) {
+      query = { isAdminOnly: false, type: { $ne: 'purchase' } };
+    }
+    
+    const notifications = await Notification.find(query)
+      .sort({ created_at: -1 })
+      .limit(50);
+      
+    res.json(notifications.map(n => ({
+      id: n._id.toString(),
+      title: n.title,
+      message: n.message,
+      type: n.type,
+      created_at: n.created_at
+    })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch notifications.' });
+  }
+});
+
+// --- OTT Platforms Endpoints ---
+app.get('/api/admin/ott-platforms', requireAdmin, async (req, res) => {
+  try {
+    const platforms = await OttPlatform.find().sort({ name: 1 });
+    res.json(platforms.map(p => ({ id: p._id.toString(), name: p.name })));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch OTT platforms.' });
+  }
+});
+
+app.post('/api/admin/ott-platforms', requireAdmin, async (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Platform name is required.' });
+  }
+  try {
+    const trimmedName = name.trim();
+    const exists = await OttPlatform.findOne({ name: { $regex: new RegExp(`^${trimmedName}$`, 'i') } });
+    if (exists) {
+      return res.status(400).json({ error: 'Platform already exists.' });
+    }
+    const newPlatform = new OttPlatform({ name: trimmedName });
+    await newPlatform.save();
+    res.status(201).json({ message: 'OTT platform added successfully', platform: { id: newPlatform._id.toString(), name: newPlatform.name } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to create OTT platform.' });
   }
 });
 

@@ -38,7 +38,10 @@ export default function App() {
     currency: '$',
     platform: '',
     category: 'OTT Subscriptions',
-    image_url: ''
+    image_url: '',
+    setup_type: '',
+    duration: '',
+    stock_type: 'code'
   });
 
   // --- Modal States ---
@@ -57,6 +60,24 @@ export default function App() {
     onConfirm: null,
     onCancel: null
   });
+
+  const [editUTRModal, setEditUTRModal] = useState({
+    show: false,
+    orderId: null,
+    utrNumber: ''
+  });
+
+  const [analytics, setAnalytics] = useState({ visits: 0, users: 0, orders: 0, revenue: 0 });
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [loadingAdminUsers, setLoadingAdminUsers] = useState(false);
+  const [editKeyModal, setEditKeyModal] = useState({ show: false, keyId: null, keyValue: '', keyType: 'code' });
+  const [cropperState, setCropperState] = useState({ show: false, file: null, aspect: 1, onComplete: null });
+
+  // --- Notification States ---
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
 
   const [supportWidgetOpen, setSupportWidgetOpen] = useState(false);
 
@@ -78,6 +99,7 @@ export default function App() {
     checkAuthSession();
     loadProducts();
     loadSettings();
+    logVisit();
   }, []);
 
   useEffect(() => {
@@ -103,80 +125,86 @@ export default function App() {
   useEffect(() => {
     if (currentUser?.role === 'admin' && activeView === 'admin') {
       loadSettings();
+      loadProducts();
+      loadAdminOrders();
+      loadAnalytics();
+      loadAdminUsers();
+    } else if (currentUser && activeView === 'orders') {
+      loadUserOrders();
     }
   }, [currentUser, activeView]);
 
-  // --- Real-time Order Polling Notifications ---
-  const prevOrdersRef = React.useRef([]);
+  const loadNotifications = async () => {
+    try {
+      const data = await apiRequest('/api/notifications');
+      setNotifications(data);
+    } catch (err) {}
+  };
 
   useEffect(() => {
-    if (!currentUser) {
-      prevOrdersRef.current = [];
-      return;
-    }
+    loadNotifications();
 
-    const pollOrders = async () => {
+    const eventSource = new EventSource('/api/notifications/stream');
+
+    eventSource.onmessage = (event) => {
       try {
-        if (currentUser.role === 'admin') {
-          // Poll Admin Orders
-          const res = await fetch('/api/admin/orders');
-          if (!res.ok) return;
-          const data = await res.json();
-
-          // Check if we have a previous dataset to compare
-          if (prevOrdersRef.current.length > 0) {
-            const newPending = data.filter(o => o.status === 'pending');
-            const prevPendingIds = prevOrdersRef.current.filter(o => o.status === 'pending').map(o => o.id);
-
-            newPending.forEach(order => {
-              if (!prevPendingIds.includes(order.id)) {
-                showToast(`New order placed by ${order.user_email} for ${order.product_name}!`, 'info');
-              }
-            });
+        const notif = JSON.parse(event.data);
+        const isAdmin = currentUser?.role === 'admin';
+        
+        // Add to notifications history list
+        setNotifications(prev => {
+          // If it's a purchase social proof alert, don't store it in user's history list
+          const isPurchase = notif.type === 'purchase';
+          if (isPurchase && !isAdmin) {
+            return prev;
           }
+          return [notif, ...prev].slice(0, 50);
+        });
 
-          prevOrdersRef.current = data;
-          if (activeView === 'admin') {
-            setAdminOrders(data);
+        // Increment badge unread count if applicable
+        const isPurchase = notif.type === 'purchase';
+        if (isAdmin || (!notif.isAdminOnly && !isPurchase)) {
+          setUnreadCount(prev => prev + 1);
+        }
+
+        // Show live sliding toast notification
+        if (isAdmin || !notif.isAdminOnly) {
+          let toastType = 'info';
+          if (notif.type === 'purchase') toastType = 'success';
+          if (notif.type === 'price_update') toastType = 'warning';
+          if (notif.type === 'back_in_stock') toastType = 'success';
+          if (notif.type === 'out_of_stock') toastType = 'error';
+          showToast(`${notif.title}: ${notif.message}`, toastType);
+        }
+
+        // Synchronize local states automatically in real-time
+        if (isAdmin) {
+          if (['new_order', 'order_approved', 'order_rejected'].includes(notif.type)) {
+            loadAdminOrders();
+            loadAnalytics();
           }
         } else {
-          // Poll Customer Orders
-          const res = await fetch('/api/orders');
-          if (!res.ok) return;
-          const data = await res.json();
-
-          // Check if we have a previous dataset to compare
-          if (prevOrdersRef.current.length > 0) {
-            data.forEach(order => {
-              const prevOrder = prevOrdersRef.current.find(o => o.id === order.id);
-              if (prevOrder && prevOrder.status !== order.status) {
-                if (order.status === 'approved') {
-                  showToast(`Your order for ${order.product_name} has been completed!`, 'success');
-                } else if (order.status === 'rejected') {
-                  showToast(`Your order for ${order.product_name} was rejected: "${order.rejection_reason || 'No reason specified'}"`, 'error');
-                }
-              }
-            });
-          }
-
-          prevOrdersRef.current = data;
-          if (activeView === 'orders') {
-            setUserOrders(data);
+          if (['order_approved', 'order_rejected'].includes(notif.type)) {
+            loadUserOrders();
           }
         }
+
+        if (['new_product', 'price_update', 'back_in_stock', 'out_of_stock'].includes(notif.type)) {
+          loadProducts();
+        }
       } catch (err) {
-        // Silently capture errors to not disrupt user experience
+        console.error('Error handling SSE notification event:', err);
       }
     };
 
-    // Run the first poll immediately
-    pollOrders();
+    eventSource.onerror = (err) => {
+      console.warn('SSE connection disconnected. Attempting automatic reconnection...', err);
+    };
 
-    // Set polling interval to 10 seconds
-    const intervalId = setInterval(pollOrders, 10000);
-
-    return () => clearInterval(intervalId);
-  }, [currentUser, activeView]);
+    return () => {
+      eventSource.close();
+    };
+  }, [currentUser]);
 
   // --- Toast Dispatcher ---
   const showToast = (message, type = 'info') => {
@@ -256,6 +284,34 @@ export default function App() {
     } catch (err) {}
   };
 
+  const loadAnalytics = async () => {
+    setLoadingAnalytics(true);
+    try {
+      const data = await apiRequest('/api/admin/analytics');
+      setAnalytics(data);
+    } catch (err) {
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  };
+
+  const loadAdminUsers = async () => {
+    setLoadingAdminUsers(true);
+    try {
+      const data = await apiRequest('/api/admin/users');
+      setAdminUsers(data);
+    } catch (err) {
+    } finally {
+      setLoadingAdminUsers(false);
+    }
+  };
+
+  const logVisit = async () => {
+    try {
+      await fetch('/api/visits', { method: 'POST' });
+    } catch (err) {}
+  };
+
   // --- Navigation Router ---
   const navigateTo = (viewName) => {
     setMobileMenuOpen(false);
@@ -297,7 +353,134 @@ export default function App() {
     });
   };
 
+  useEffect(() => {
+    if (!notifDropdownOpen) return;
+    const handleCloseDropdown = (e) => {
+      if (!e.target.closest('.notification-bell-container')) {
+        setNotifDropdownOpen(false);
+      }
+    };
+    window.addEventListener('click', handleCloseDropdown);
+    return () => window.removeEventListener('click', handleCloseDropdown);
+  }, [notifDropdownOpen]);
+
   // --- Render Functions / Sub-components ---
+  const renderNotificationBell = () => {
+    if (!currentUser) return null;
+
+    return (
+      <div className="notification-bell-container" style={{ position: 'relative', display: 'inline-block' }}>
+        <button
+          className="btn btn-secondary btn-sm"
+          style={{ padding: '6px', borderRadius: '50%', display: 'inline-flex', position: 'relative' }}
+          onClick={() => {
+            setNotifDropdownOpen(!notifDropdownOpen);
+            setUnreadCount(0);
+          }}
+          aria-label="Notifications"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9m4.3 13a3 3 0 0 0 5.4 0" />
+          </svg>
+          {unreadCount > 0 && (
+            <span 
+              className="notif-badge" 
+              style={{
+                position: 'absolute',
+                top: '-4px',
+                right: '-4px',
+                backgroundColor: 'var(--accent-color, #ff3b30)',
+                color: '#fff',
+                fontSize: '9px',
+                fontWeight: 'bold',
+                borderRadius: '50%',
+                minWidth: '14px',
+                height: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '0 3px'
+              }}
+            >
+              {unreadCount}
+            </span>
+          )}
+        </button>
+
+        {notifDropdownOpen && (
+          <div 
+            className="notif-dropdown" 
+            style={{
+              position: 'absolute',
+              top: '35px',
+              right: 0,
+              width: '280px',
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '4px',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              zIndex: 1000,
+              padding: '10px',
+              maxHeight: '350px',
+              overflowY: 'auto'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', marginBottom: '8px' }}>
+              <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>Notifications</strong>
+              <button 
+                type="button" 
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '11px', cursor: 'pointer' }}
+                onClick={() => setNotifications([])}
+              >
+                Clear All
+              </button>
+            </div>
+            {notifications.length === 0 ? (
+              <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+                No notifications yet.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {notifications.map(n => {
+                  let badgeColor = 'var(--text-muted)';
+                  if (n.type === 'new_product') badgeColor = '#007cff';
+                  if (n.type === 'price_update') badgeColor = '#ff9500';
+                  if (n.type === 'back_in_stock') badgeColor = '#34c759';
+                  if (n.type === 'out_of_stock') badgeColor = '#ff3b30';
+
+                  return (
+                    <div 
+                      key={n.id} 
+                      style={{ 
+                        padding: '8px', 
+                        borderRadius: '4px', 
+                        backgroundColor: 'var(--bg-surface-elevated)', 
+                        borderLeft: `3px solid ${badgeColor}`,
+                        fontSize: '11.5px',
+                        lineHeight: '1.4',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '3px' }}>
+                        <strong style={{ fontSize: '11px', color: 'var(--text-main)' }}>{n.title}</strong>
+                        <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                          {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '11px', wordBreak: 'break-word' }}>
+                        {n.message}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderToasts = () => (
     <div className="toast-container">
       {toasts.map(t => {
@@ -373,6 +556,7 @@ export default function App() {
 
           {/* Desktop Navigation */}
           <div className="desktop-nav">
+            {renderNotificationBell()}
             <button 
               className="btn btn-secondary btn-sm theme-toggle-btn"
               onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
@@ -411,6 +595,7 @@ export default function App() {
 
           {/* Mobile Header Controls (Theme Toggle + Hamburger) */}
           <div className="mobile-header-actions">
+            {renderNotificationBell()}
             <button 
               className="btn btn-secondary btn-sm theme-toggle-btn"
               onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
@@ -554,6 +739,30 @@ export default function App() {
                     <span className="product-category">{prod.category}</span>
                     <h4 className="product-title">{prod.name}</h4>
                     <p className="product-desc-excerpt">{prod.description}</p>
+
+                    {/* Specifications badges */}
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px', fontSize: '11px' }}>
+                      {prod.duration && (
+                        <span style={{ padding: '2px 6px', backgroundColor: 'var(--bg-surface-elevated)', borderRadius: '4px', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                          ⏳ {prod.duration}
+                        </span>
+                      )}
+                      {prod.setup_type && (
+                        <span style={{ padding: '2px 6px', backgroundColor: 'var(--bg-surface-elevated)', borderRadius: '4px', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                          ✉️ {prod.setup_type === 'on_your_mail' ? 'Your Mail' : 'My Mail'}
+                        </span>
+                      )}
+                      <span style={{ padding: '2px 6px', backgroundColor: 'var(--bg-surface-elevated)', borderRadius: '4px', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                        🛠️ {prod.stock_type === 'code' ? 'Code' :
+                             prod.stock_type === 'link' ? 'Invite Link' :
+                             prod.stock_type === 'credentials' ? 'Credentials' :
+                             prod.stock_type === 'login_code' ? 'Login Code' : 'Voucher'}
+                      </span>
+                      <span style={{ padding: '2px 6px', backgroundColor: prod.stock_count > 0 ? 'rgba(37,211,102,0.1)' : 'rgba(255,59,48,0.1)', borderRadius: '4px', border: '1px solid var(--border-color)', color: prod.stock_count > 0 ? '#25D366' : 'var(--danger-color)', fontWeight: 'bold' }}>
+                        📦 {prod.stock_count > 0 ? `${prod.stock_count} Available` : 'Out of Stock'}
+                      </span>
+                    </div>
+
                     <div className="product-footer">
                       <span className="product-price">{prod.currency || '$'}{prod.price.toFixed(2)}</span>
                       <button 
@@ -583,10 +792,60 @@ export default function App() {
               <div className="details-info-card">
                 <div className="details-badge-row">
                   <span className="detail-badge">Digital Delivery</span>
-                  <span className="detail-badge">Private Account</span>
+                  {selectedProduct.setup_type ? (
+                    <span className="detail-badge">
+                      {selectedProduct.setup_type === 'on_your_mail' ? 'Setup: Your Mail' : 'Setup: My Mail'}
+                    </span>
+                  ) : (
+                    <span className="detail-badge">Private Account</span>
+                  )}
                   <span className="detail-badge">{selectedProduct.platform}</span>
                 </div>
                 <h1 className="details-title">{selectedProduct.name}</h1>
+
+                {/* PRODUCT SPECIFICATION BLOCK */}
+                <div style={{ 
+                  margin: '15px 0', 
+                  padding: '15px', 
+                  backgroundColor: 'var(--bg-surface-elevated)', 
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: '8px',
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '12px',
+                  fontSize: '0.85rem'
+                }}>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Stock Type</span>
+                    <strong style={{ color: 'var(--text-main)' }}>
+                      {selectedProduct.stock_type === 'code' ? 'Promo Code / Key' :
+                       selectedProduct.stock_type === 'link' ? 'Invite Link' :
+                       selectedProduct.stock_type === 'credentials' ? 'Credentials (Email:Password)' :
+                       selectedProduct.stock_type === 'login_code' ? 'Login with Code' : 'Voucher'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Available Quantity</span>
+                    <strong style={selectedProduct.stock_count > 0 ? { color: '#25D366' } : { color: 'var(--danger-color)' }}>
+                      {selectedProduct.stock_count > 0 ? `${selectedProduct.stock_count} units` : 'Out of Stock'}
+                    </strong>
+                  </div>
+                  {selectedProduct.duration && (
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Duration</span>
+                      <strong style={{ color: 'var(--text-main)' }}>{selectedProduct.duration}</strong>
+                    </div>
+                  )}
+                  {selectedProduct.setup_type && (
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Setup Method</span>
+                      <strong style={{ color: 'var(--text-main)' }}>
+                        {selectedProduct.setup_type === 'on_your_mail' ? 'Account on Your Mail' : 'Account on My Mail'}
+                      </strong>
+                    </div>
+                  )}
+                </div>
+
                 <p className="details-description">{selectedProduct.description}</p>
                 
                 <div className="details-buy-box">
@@ -623,6 +882,7 @@ export default function App() {
               navigateTo={navigateTo}
               handleCopyUPI={handleCopyUPI}
               settings={settings}
+              setCropperState={setCropperState}
             />
           </ProtectedRoute>
         )}
@@ -653,6 +913,7 @@ export default function App() {
             <UserOrdersView 
               orders={userOrders} 
               currentUser={currentUser} 
+              showToast={showToast}
             />
           </ProtectedRoute>
         )}
@@ -677,6 +938,17 @@ export default function App() {
               loadSettings={loadSettings}
               confirmModal={confirmModal}
               setConfirmModal={setConfirmModal}
+              setEditUTRModal={setEditUTRModal}
+              analytics={analytics}
+              loadingAnalytics={loadingAnalytics}
+              loadAnalytics={loadAnalytics}
+              adminUsers={adminUsers}
+              loadingAdminUsers={loadingAdminUsers}
+              loadAdminUsers={loadAdminUsers}
+              editKeyModal={editKeyModal}
+              setEditKeyModal={setEditKeyModal}
+              setCropperState={setCropperState}
+              currentUser={currentUser}
             />
           </ProtectedRoute>
         )}
@@ -843,6 +1115,198 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* EDIT UTR MODAL */}
+      {editUTRModal.show && (
+        <div className="modal-backdrop">
+          <div className="modal-card" style={{ maxWidth: '400px' }}>
+            <h3 className="modal-title">Edit Order UTR Number</h3>
+            <p className="modal-subtitle" style={{ marginBottom: '15px' }}>
+              Update the transaction reference ID for this order. This resets verification status to unchecked.
+            </p>
+            
+            <div className="form-group" style={{ marginBottom: '15px' }}>
+              <label htmlFor="edit-utr-input" style={{ fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>
+                UTR / UPI Reference Number
+              </label>
+              <input 
+                type="text" 
+                id="edit-utr-input"
+                value={editUTRModal.utrNumber}
+                onChange={(e) => setEditUTRModal(prev => ({ ...prev, utrNumber: e.target.value }))}
+                placeholder="Enter 8-20 digit UTR"
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  borderRadius: '4px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--input-bg)',
+                  color: 'var(--text-main)',
+                  outline: 'none',
+                  fontFamily: 'inherit'
+                }}
+                autoFocus
+              />
+            </div>
+            
+            <div className="modal-actions" style={{ marginTop: '20px' }}>
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                onClick={() => setEditUTRModal({ show: false, orderId: null, utrNumber: '' })}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-primary"
+                onClick={async () => {
+                  if (editUTRModal.utrNumber.trim().length < 12) {
+                    showToast('UTR reference must be at least 12 characters.', 'warning');
+                    return;
+                  }
+                  try {
+                    const data = await apiRequest(`/api/admin/orders/${editUTRModal.orderId}/utr`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ utr_number: editUTRModal.utrNumber.trim() })
+                    });
+                    showToast(data.message, 'success');
+                    setEditUTRModal({ show: false, orderId: null, utrNumber: '' });
+                    loadAdminOrders();
+                  } catch (err) {
+                    showToast(err.message || 'Failed to update UTR', 'error');
+                  }
+                }}
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT KEY MODAL */}
+      {editKeyModal.show && (
+        <div className="modal-backdrop">
+          <div className="modal-card" style={{ maxWidth: '400px' }}>
+            <h3 className="modal-title">Edit Stock Item</h3>
+            <p className="modal-subtitle" style={{ marginBottom: '15px' }}>
+              Update the key value and type for this inventory item.
+            </p>
+            
+            <div className="form-group" style={{ marginBottom: '15px' }}>
+              <label htmlFor="edit-key-value-input" style={{ fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>
+                Key / Code / Credentials / Link
+              </label>
+              <textarea 
+                id="edit-key-value-input"
+                className="form-control"
+                value={editKeyModal.keyValue}
+                onChange={(e) => setEditKeyModal(prev => ({ ...prev, keyValue: e.target.value }))}
+                placeholder="Enter key details"
+                rows={3}
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  borderRadius: '4px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--input-bg)',
+                  color: 'var(--text-main)',
+                  outline: 'none',
+                  fontFamily: 'monospace',
+                  fontSize: '13px'
+                }}
+                autoFocus
+              />
+            </div>
+
+            <div className="form-group" style={{ marginBottom: '15px' }}>
+              <label style={{ fontWeight: 'bold', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>
+                Stock Type
+              </label>
+              <select
+                value={editKeyModal.keyType}
+                onChange={(e) => setEditKeyModal(prev => ({ ...prev, keyType: e.target.value }))}
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  borderRadius: '4px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--input-bg)',
+                  color: 'var(--text-main)',
+                  outline: 'none'
+                }}
+              >
+                <option value="code">Promo Code / Key</option>
+                <option value="link">Invite Link</option>
+                <option value="credentials">Credentials (Email:Password)</option>
+                <option value="login_code">Login with Code</option>
+              </select>
+            </div>
+            
+            <div className="modal-actions" style={{ marginTop: '20px' }}>
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                onClick={() => setEditKeyModal({ show: false, keyId: null, keyValue: '', keyType: 'code' })}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-primary"
+                onClick={async () => {
+                  if (!editKeyModal.keyValue.trim()) {
+                    showToast('Key value cannot be empty.', 'warning');
+                    return;
+                  }
+                  try {
+                    const data = await apiRequest(`/api/admin/keys/${editKeyModal.keyId}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ 
+                        key_value: editKeyModal.keyValue.trim(),
+                        type: editKeyModal.keyType
+                      })
+                    });
+                    showToast(data.message, 'success');
+                    setEditKeyModal({ show: false, keyId: null, keyValue: '', keyType: 'code' });
+                    if (selectedProductForStock) {
+                      loadStockTabKeys(selectedProductForStock);
+                    }
+                    if (activeStockProduct) {
+                      const updatedKeys = await apiRequest(`/api/admin/products/${activeStockProduct.id}/keys`);
+                      setStockKeys(updatedKeys);
+                    }
+                    loadProducts();
+                  } catch (err) {
+                    showToast(err.message || 'Failed to update key', 'error');
+                  }
+                }}
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REUSABLE IMAGE CROPPER MODAL */}
+      {cropperState.show && (
+        <ImageCropperModal 
+          show={cropperState.show}
+          imageFile={cropperState.file}
+          aspect={cropperState.aspect}
+          onCancel={() => setCropperState({ show: false, file: null, aspect: 1, onComplete: null })}
+          onCrop={(croppedFile) => {
+            if (cropperState.onComplete) {
+              cropperState.onComplete(croppedFile);
+            }
+            setCropperState({ show: false, file: null, aspect: 1, onComplete: null });
+          }}
+        />
       )}
 
       {/* FLOATING WHATSAPP CHAT WIDGET */}
@@ -1093,15 +1557,15 @@ function RegisterView({ apiRequest, showToast, setCurrentUser, navigateTo }) {
   );
 }
 
-function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUPI, settings }) {
+function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUPI, settings, setCropperState }) {
   const [utrNumber, setUtrNumber] = useState('');
   const [screenshot, setScreenshot] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const onSubmit = async (e) => {
     e.preventDefault();
-    if (utrNumber.trim().length < 8) {
-      showToast('UTR reference must be at least 8 characters.', 'warning');
+    if (utrNumber.trim().length < 12) {
+      showToast('UTR reference must be at least 12 characters.', 'warning');
       return;
     }
 
@@ -1143,6 +1607,39 @@ function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUP
               <span className="preview-platform">{product.platform}</span>
             </div>
           </div>
+          
+          <div style={{ marginTop: '12px', padding: '12px', backgroundColor: 'var(--bg-surface-elevated)', borderRadius: '6px', fontSize: '0.8rem', border: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Stock Type</span>
+              <strong style={{ color: 'var(--text-main)' }}>
+                {product.stock_type === 'code' ? 'Promo Code / Key' :
+                 product.stock_type === 'link' ? 'Invite Link' :
+                 product.stock_type === 'credentials' ? 'Credentials' :
+                 product.stock_type === 'login_code' ? 'Login with Code' : 'Voucher'}
+              </strong>
+            </div>
+            {product.duration && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Duration</span>
+                <strong style={{ color: 'var(--text-main)' }}>{product.duration}</strong>
+              </div>
+            )}
+            {product.setup_type && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Setup Type</span>
+                <strong style={{ color: 'var(--text-main)' }}>
+                  {product.setup_type === 'on_your_mail' ? 'Account on Your Mail' : 'Account on My Mail'}
+                </strong>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Inventory Status</span>
+              <strong style={product.stock_count > 0 ? { color: '#25D366' } : { color: 'var(--danger-color)' }}>
+                {product.stock_count > 0 ? `${product.stock_count} units` : 'Out of Stock'}
+              </strong>
+            </div>
+          </div>
+
           <hr className="divider" />
           <div className="price-row">
             <span>Subtotal</span>
@@ -1281,7 +1778,18 @@ function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUP
                   type="file" 
                   id="checkout-screenshot" 
                   accept="image/*"
-                  onChange={(e) => setScreenshot(e.target.files[0])}
+                  onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    setCropperState({
+                      show: true,
+                      file: file,
+                      aspect: 'free', // Receipt screenshots use free cropping
+                      onComplete: (croppedFile) => {
+                        setScreenshot(croppedFile);
+                      }
+                    });
+                  }}
                 />
                 <div className="upload-dummy-btn">
                   {screenshot ? `Selected: ${screenshot.name}` : 'Choose File or Take Photo'}
@@ -1304,7 +1812,7 @@ function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUP
   );
 }
 
-function UserOrdersView({ orders, currentUser }) {
+function UserOrdersView({ orders, currentUser, showToast }) {
   return (
     <section id="view-orders">
       <div className="section-header">
@@ -1335,9 +1843,9 @@ function UserOrdersView({ orders, currentUser }) {
                   </div>
                   <span className="order-utr-text">Reference UTR: <strong>{order.utr_number}</strong></span>
                   <span className="order-date-text">Submitted on {date}</span>
-                  <div style={{ marginTop: '6px' }}>
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '6px' }}>
                     <a 
-                      href={`https://wa.me/917017750272?text=${encodeURIComponent(`Hi, I need help with my order. Reference UTR: ${order.utr_number}`)}`} 
+                      href={`https://wa.me/917017750272?text=${encodeURIComponent(`Hello support! I need help with my order.\nItem Name: ${order.product_name}\nQuantity: 1\nUTR Reference: ${order.utr_number}`)}`} 
                       target="_blank" 
                       rel="noreferrer"
                       style={{ fontSize: '12px', color: 'var(--text-muted)', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
@@ -1346,6 +1854,12 @@ function UserOrdersView({ orders, currentUser }) {
                         <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L0 24l6.335-1.662c1.746.953 3.71 1.455 5.703 1.457h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
                       </svg>
                       Need Help? Chat on WhatsApp
+                    </a>
+                    <a 
+                      href={`mailto:support@ottsolution.com?subject=${encodeURIComponent(`Help Request - UTR: ${order.utr_number}`)}&body=${encodeURIComponent(`Hello support team!\n\nI need help with my order.\n\nOrder Details:\nItem Name: ${order.product_name}\nQuantity: 1\nUTR Reference: ${order.utr_number}\n\nThank you!`)}`} 
+                      style={{ fontSize: '12px', color: 'var(--text-muted)', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      ✉ Need Help? Contact via Email
                     </a>
                   </div>
                 </div>
@@ -1359,20 +1873,133 @@ function UserOrdersView({ orders, currentUser }) {
                     <div className="delivery-content">
                       {order.key_value ? (
                         <div style={{ marginTop: '5px' }}>
-                          <span style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)' }}>Your digital invite / credentials:</span>
-                          {order.key_value.startsWith('http') ? (
-                            <a 
-                              href={order.key_value} 
-                              target="_blank" 
-                              rel="noreferrer" 
-                              className="btn btn-primary btn-sm" 
-                              style={{ display: 'inline-block', textDecoration: 'none' }}
-                            >
-                              Join Subscription / Claim Invite Link
-                            </a>
+                          {order.key_type === 'link' ? (
+                            <div>
+                              <span style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Your Invite Link:</span>
+                              <a 
+                                href={order.key_value} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className="btn btn-primary btn-sm" 
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', textDecoration: 'none' }}
+                              >
+                                🔗 Join Subscription / Claim Invite Link
+                              </a>
+                            </div>
+                          ) : order.key_type === 'credentials' ? (
+                            <div>
+                              <span style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Account Credentials:</span>
+                              {(() => {
+                                const parts = order.key_value.split(':');
+                                if (parts.length >= 2) {
+                                  const emailPart = parts[0].trim();
+                                  const passPart = parts.slice(1).join(':').trim();
+                                  return (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
+                                        <span><strong>Email:</strong> <code style={{ fontFamily: 'monospace' }}>{emailPart}</code></span>
+                                        <button 
+                                          className="btn btn-secondary btn-xs" 
+                                          style={{ padding: '2px 6px', fontSize: '11px' }}
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(emailPart);
+                                            showToast('Email copied to clipboard!');
+                                          }}
+                                        >
+                                          Copy
+                                        </button>
+                                      </div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
+                                        <span><strong>Password:</strong> <code style={{ fontFamily: 'monospace' }}>{passPart}</code></span>
+                                        <button 
+                                          className="btn btn-secondary btn-xs" 
+                                          style={{ padding: '2px 6px', fontSize: '11px' }}
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(passPart);
+                                            showToast('Password copied to clipboard!');
+                                          }}
+                                        >
+                                          Copy
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                } else {
+                                  return (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                                      <code style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>{order.key_value}</code>
+                                      <button 
+                                        className="btn btn-secondary btn-xs" 
+                                        style={{ padding: '2px 6px', fontSize: '11px' }}
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(order.key_value);
+                                          showToast('Credentials copied!');
+                                        }}
+                                      >
+                                        Copy
+                                      </button>
+                                    </div>
+                                  );
+                                }
+                              })()}
+                            </div>
+                          ) : order.key_type === 'login_code' ? (
+                            <div>
+                              <span style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Login Code:</span>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px dashed var(--border-color)', borderRadius: '6px', marginBottom: '12px' }}>
+                                <code style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 'bold', color: 'var(--primary-color)' }}>{order.key_value}</code>
+                                <button 
+                                  className="btn btn-secondary btn-xs" 
+                                  style={{ padding: '2px 6px', fontSize: '11px' }}
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(order.key_value);
+                                    showToast('Login code copied!');
+                                  }}
+                                >
+                                  Copy
+                                </button>
+                              </div>
+                              <div style={{ backgroundColor: 'rgba(255,193,7,0.1)', border: '1px solid rgba(255,193,7,0.3)', borderRadius: '6px', padding: '12px', fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                                <p style={{ margin: '0 0 10px 0' }}>⚠️ <strong>Action Required:</strong> Please contact support to activate this code on your device.</p>
+                                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                  <a 
+                                    href={`https://wa.me/917017750272?text=${encodeURIComponent(`Hi support!\n\nI need to activate my Login Code.\n\nItem Name: ${order.product_name}\nQuantity: 1\nUTR Reference: ${order.utr_number}\nLogin Code: ${order.key_value}`)}`} 
+                                    target="_blank" 
+                                    rel="noreferrer" 
+                                    className="btn btn-xs" 
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none', backgroundColor: '#25D366', borderColor: '#25D366', color: '#fff', padding: '6px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: '600' }}
+                                  >
+                                    <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style={{ marginRight: '2px' }}>
+                                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L0 24l6.335-1.662c1.746.953 3.71 1.455 5.703 1.457h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                                    </svg>
+                                    Activate via WhatsApp
+                                  </a>
+                                  <a 
+                                    href={`mailto:support@ottsolution.com?subject=${encodeURIComponent(`Login Code Activation Request - UTR: ${order.utr_number}`)}&body=${encodeURIComponent(`Hello support team!\n\nI need to activate my Login Code.\n\nOrder Details:\nItem Name: ${order.product_name}\nQuantity: 1\nUTR Reference: ${order.utr_number}\nLogin Code: ${order.key_value}\n\nThank you!`)}`} 
+                                    className="btn btn-secondary btn-xs" 
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
+                                  >
+                                    ✉ Activate via Email
+                                  </a>
+                                </div>
+                              </div>
+                            </div>
                           ) : (
-                            <div style={{ padding: '10px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px dashed var(--border-color)', borderRadius: '4px', fontFamily: 'monospace', fontSize: '13px', wordBreak: 'break-all' }}>
-                              {order.key_value}
+                            <div>
+                              <span style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Coupon / Voucher Code:</span>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: 'var(--bg-surface-elevated)', border: '2px dashed var(--border-color)', borderRadius: '6px' }}>
+                                <code style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 'bold', color: 'var(--primary-color)' }}>{order.key_value}</code>
+                                <button 
+                                  className="btn btn-secondary btn-xs" 
+                                  style={{ padding: '2px 6px', fontSize: '11px' }}
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(order.key_value);
+                                    showToast('Code copied to clipboard!');
+                                  }}
+                                >
+                                  Copy
+                                </button>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1428,7 +2055,18 @@ function AdminPanelView({
   settings,
   loadSettings,
   confirmModal,
-  setConfirmModal
+  setConfirmModal,
+  setEditUTRModal,
+  analytics,
+  loadingAnalytics,
+  loadAnalytics,
+  adminUsers,
+  loadingAdminUsers,
+  loadAdminUsers,
+  editKeyModal,
+  setEditKeyModal,
+  setCropperState,
+  currentUser
 }) {
   const [productImageFile, setProductImageFile] = useState(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState('');
@@ -1456,6 +2094,45 @@ function AdminPanelView({
   const [utrText, setUtrText] = useState('');
   const [reconciling, setReconciling] = useState(false);
   const [reconcileResult, setReconcileResult] = useState(null);
+  const [filterStockType, setFilterStockType] = useState('all');
+
+  const handleBanUser = (user) => {
+    setConfirmModal({
+      show: true,
+      title: `Ban User: ${user.email}`,
+      message: `Are you sure you want to ban this user? They will not be able to log in or make purchases.`,
+      requireTextConfirm: true,
+      confirmInput: '',
+      onConfirm: async () => {
+        try {
+          const res = await apiRequest(`/api/admin/users/${user.id}/ban`, { method: 'POST' });
+          showToast(res.message || 'User banned successfully.', 'success');
+          loadAdminUsers();
+        } catch (err) {
+          showToast(err.message || 'Failed to ban user.', 'error');
+        }
+      }
+    });
+  };
+
+  const handleUnbanUser = (user) => {
+    setConfirmModal({
+      show: true,
+      title: `Unban User: ${user.email}`,
+      message: `Are you sure you want to unban this user? They will be able to log in and make purchases again.`,
+      requireTextConfirm: false,
+      confirmInput: '',
+      onConfirm: async () => {
+        try {
+          const res = await apiRequest(`/api/admin/users/${user.id}/unban`, { method: 'POST' });
+          showToast(res.message || 'User unbanned successfully.', 'success');
+          loadAdminUsers();
+        } catch (err) {
+          showToast(err.message || 'Failed to unban user.', 'error');
+        }
+      }
+    });
+  };
 
   // Stock management states
   const [activeStockProduct, setActiveStockProduct] = useState(null);
@@ -1465,6 +2142,168 @@ function AdminPanelView({
   const [loadingKeys, setLoadingKeys] = useState(false);
 
   const [orderSearchQuery, setOrderSearchQuery] = useState('');
+
+  // --- Stock Options States ---
+  const [ottPlatforms, setOttPlatforms] = useState([]);
+  const [selectedOtt, setSelectedOtt] = useState(null);
+  const [newOttName, setNewOttName] = useState('');
+  const [selectedProductForStock, setSelectedProductForStock] = useState('');
+  const [stockUploadType, setStockUploadType] = useState('code');
+  const [stockUploadText, setStockUploadText] = useState('');
+  const [ottProducts, setOttProducts] = useState([]);
+  const [stockTabKeys, setStockTabKeys] = useState([]);
+  const [loadingStockTabKeys, setLoadingStockTabKeys] = useState(false);
+
+  const loadOttPlatforms = async () => {
+    try {
+      const data = await apiRequest('/api/admin/ott-platforms');
+      setOttPlatforms(data);
+      if (data.length > 0 && !selectedOtt) {
+        setSelectedOtt(data[0]);
+      }
+    } catch (err) {
+      showToast('Failed to load OTT platforms', 'error');
+    }
+  };
+
+  useEffect(() => {
+    if (adminTab === 'stock') {
+      loadOttPlatforms();
+    }
+  }, [adminTab]);
+
+  useEffect(() => {
+    if (selectedOtt) {
+      const filteredProds = products.filter(p => p.platform.toLowerCase() === selectedOtt.name.toLowerCase());
+      setOttProducts(filteredProds);
+      if (filteredProds.length > 0) {
+        setSelectedProductForStock(filteredProds[0].id);
+      } else {
+        setSelectedProductForStock('');
+        setStockTabKeys([]);
+      }
+    }
+  }, [selectedOtt, products]);
+
+  const loadStockTabKeys = async (productId) => {
+    if (!productId) {
+      setStockTabKeys([]);
+      return;
+    }
+    setLoadingStockTabKeys(true);
+    try {
+      const data = await apiRequest(`/api/admin/products/${productId}/keys`);
+      setStockTabKeys(data);
+    } catch (err) {
+      showToast('Failed to load keys', 'error');
+    } finally {
+      setLoadingStockTabKeys(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedProductForStock) {
+      loadStockTabKeys(selectedProductForStock);
+    } else {
+      setStockTabKeys([]);
+    }
+  }, [selectedProductForStock]);
+
+  const handleAddOttPlatform = async (e) => {
+    e.preventDefault();
+    if (!newOttName.trim()) return;
+    try {
+      const data = await apiRequest('/api/admin/ott-platforms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newOttName })
+      });
+      showToast(data.message, 'success');
+      setNewOttName('');
+      const updatedPlatforms = await apiRequest('/api/admin/ott-platforms');
+      setOttPlatforms(updatedPlatforms);
+      const matched = updatedPlatforms.find(p => p.name.toLowerCase() === data.platform.name.toLowerCase());
+      if (matched) {
+        setSelectedOtt(matched);
+      }
+    } catch (err) {
+      showToast(err.message || 'Failed to add OTT platform', 'error');
+    }
+  };
+
+  const handleUploadStockTabKeys = async (e) => {
+    e.preventDefault();
+    if (!selectedProductForStock || !stockUploadText.trim()) return;
+
+    const rawLines = stockUploadText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (rawLines.length === 0) {
+      showToast('Please enter at least one valid item.', 'warning');
+      return;
+    }
+
+    let formattedText = '';
+    if (stockUploadType === 'credentials') {
+      const invalid = rawLines.some(l => !l.includes(':'));
+      if (invalid) {
+        showToast('Credentials must be in Email:Password format (e.g. user@test.com:pass123)', 'error');
+        return;
+      }
+      formattedText = rawLines.map(l => {
+        const parts = l.split(':');
+        const email = parts[0].trim();
+        const pass = parts.slice(1).join(':').trim();
+        return `Email: ${email} | Pass: ${pass}`;
+      }).join('\n');
+    } else if (stockUploadType === 'link') {
+      const invalid = rawLines.some(l => !l.startsWith('http'));
+      if (invalid) {
+        showToast('Invite links must start with http:// or https://', 'error');
+        return;
+      }
+      formattedText = rawLines.join('\n');
+    } else {
+      formattedText = rawLines.join('\n');
+    }
+
+    try {
+      const data = await apiRequest(`/api/admin/products/${selectedProductForStock}/keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          keys_text: formattedText,
+          type: stockUploadType
+        })
+      });
+      showToast(data.message, 'success');
+      setStockUploadText('');
+      loadStockTabKeys(selectedProductForStock);
+      loadProducts();
+    } catch (err) {
+      showToast(err.message || 'Failed to add stock items', 'error');
+    }
+  };
+
+  const handleDeleteStockTabKey = (keyId) => {
+    setConfirmModal({
+      show: true,
+      title: 'Delete Stock Item',
+      message: 'Are you sure you want to delete this stock item from inventory? You must type CONFIRM to proceed.',
+      requireTextConfirm: true,
+      confirmInput: '',
+      onConfirm: async () => {
+        try {
+          const data = await apiRequest(`/api/admin/keys/${keyId}`, {
+            method: 'DELETE'
+          });
+          showToast(data.message, 'success');
+          loadStockTabKeys(selectedProductForStock);
+          loadProducts();
+        } catch (err) {
+          showToast(err.message || 'Failed to delete key', 'error');
+        }
+      }
+    });
+  };
 
   useEffect(() => {
     if (settings) {
@@ -1508,7 +2347,10 @@ function AdminPanelView({
       currency: prod.currency || '$',
       platform: prod.platform,
       category: prod.category,
-      image_url: prod.image_url
+      image_url: prod.image_url,
+      setup_type: prod.setup_type || '',
+      duration: prod.duration || '',
+      stock_type: prod.stock_type || 'code'
     });
 
     const standardCurrencies = ['$', '₹', '€', '£', '¥'];
@@ -1537,7 +2379,10 @@ function AdminPanelView({
       currency: '$',
       platform: '',
       category: 'OTT Subscriptions',
-      image_url: ''
+      image_url: '',
+      setup_type: '',
+      duration: '',
+      stock_type: 'code'
     });
     setProductImageFile(null);
     setCurrencySelect('$');
@@ -1566,6 +2411,9 @@ function AdminPanelView({
         formData.append('currency', newProduct.currency);
         formData.append('platform', newProduct.platform);
         formData.append('category', newProduct.category);
+        formData.append('setup_type', newProduct.setup_type || '');
+        formData.append('duration', newProduct.duration || '');
+        formData.append('stock_type', newProduct.stock_type || 'code');
         formData.append('product_image', productImageFile);
         if (newProduct.image_url) {
           formData.append('image_url', newProduct.image_url);
@@ -1597,7 +2445,10 @@ function AdminPanelView({
         currency: '$',
         platform: '',
         category: 'OTT Subscriptions',
-        image_url: ''
+        image_url: '',
+        setup_type: '',
+        duration: '',
+        stock_type: 'code'
       });
       setProductImageFile(null);
       setCurrencySelect('$');
@@ -1915,6 +2766,24 @@ function AdminPanelView({
         >
           Payment Settings
         </button>
+        <button 
+          className={`admin-tab-btn ${adminTab === 'stock' ? 'active' : ''}`}
+          onClick={() => { setAdminTab('stock'); }}
+        >
+          Stock Options
+        </button>
+        <button 
+          className={`admin-tab-btn ${adminTab === 'analytics' ? 'active' : ''}`}
+          onClick={() => { setAdminTab('analytics'); loadAnalytics(); }}
+        >
+          Analytics
+        </button>
+        <button 
+          className={`admin-tab-btn ${adminTab === 'users' ? 'active' : ''}`}
+          onClick={() => { setAdminTab('users'); loadAdminUsers(); }}
+        >
+          Users
+        </button>
       </div>
 
       {adminTab === 'orders' && (
@@ -2116,7 +2985,20 @@ function AdminPanelView({
                           <span className="platform-badge" style={{ position: 'static', marginLeft: '6px' }}>{order.platform}</span>
                         </td>
                         <td><strong>{order.currency || '$'}{order.amount.toFixed(2)}</strong></td>
-                        <td><code>{order.utr_number}</code></td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <code>{order.utr_number}</code>
+                            {['pending', 'rejected'].includes(order.status) && (
+                              <button 
+                                className="btn btn-sm btn-secondary" 
+                                style={{ padding: '2px 6px', fontSize: '10px', minHeight: 'auto', display: 'inline-flex', alignItems: 'center' }}
+                                onClick={() => setEditUTRModal({ show: true, orderId: order.id, utrNumber: order.utr_number })}
+                              >
+                                Edit
+                              </button>
+                            )}
+                          </div>
+                        </td>
                         <td>
                           {order.is_verified === 'verified' ? (
                             <span className="platform-badge" style={{ position: 'static', backgroundColor: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9', padding: '3px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold' }}>
@@ -2298,12 +3180,61 @@ function AdminPanelView({
                         type="file" 
                         id="admin-prod-image-file" 
                         accept="image/*"
-                        onChange={(e) => setProductImageFile(e.target.files[0])}
+                        onChange={(e) => {
+                          const file = e.target.files[0];
+                          if (!file) return;
+                          setCropperState({
+                            show: true,
+                            file: file,
+                            aspect: 1,
+                            onComplete: (croppedFile) => {
+                              setProductImageFile(croppedFile);
+                            }
+                          });
+                        }}
                       />
                       <div className="upload-dummy-btn" style={{ fontSize: '13px', padding: '10px' }}>
                         {productImageFile ? `Selected: ${productImageFile.name}` : 'Choose product image file'}
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group col">
+                    <label htmlFor="admin-prod-setup-type">Account Setup / Delivery Method</label>
+                    <select 
+                      id="admin-prod-setup-type" 
+                      value={newProduct.setup_type || ''}
+                      onChange={(e) => setNewProduct(prev => ({ ...prev, setup_type: e.target.value }))}
+                    >
+                      <option value="">None (Standard)</option>
+                      <option value="on_your_mail">Account on Your Mail</option>
+                      <option value="on_my_mail">Account on My Mail</option>
+                    </select>
+                  </div>
+                  <div className="form-group col">
+                    <label htmlFor="admin-prod-duration">Duration (e.g. 30 Days, 1 Month)</label>
+                    <input 
+                      type="text" 
+                      id="admin-prod-duration" 
+                      placeholder="Leave empty if not applicable"
+                      value={newProduct.duration || ''}
+                      onChange={(e) => setNewProduct(prev => ({ ...prev, duration: e.target.value }))}
+                    />
+                  </div>
+                  <div className="form-group col">
+                    <label htmlFor="admin-prod-stock-type">Expected Stock Type</label>
+                    <select 
+                      id="admin-prod-stock-type" 
+                      value={newProduct.stock_type || 'code'}
+                      onChange={(e) => setNewProduct(prev => ({ ...prev, stock_type: e.target.value }))}
+                    >
+                      <option value="code">Promo Code / Key</option>
+                      <option value="link">Invite Link</option>
+                      <option value="credentials">Credentials (Email:Password)</option>
+                      <option value="login_code">Login with Code</option>
+                    </select>
                   </div>
                 </div>
 
@@ -2521,6 +3452,417 @@ function AdminPanelView({
         </div>
       )}
 
+      {adminTab === 'stock' && (
+        <div className="admin-tab-content">
+          <div className="admin-settings-layout" style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'start' }}>
+            
+            {/* LEFT COLUMN: OTT PLATFORMS LIST */}
+            <div className="admin-settings-card" style={{ flex: '1 1 250px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '20px' }}>
+              <h3 className="card-subtitle" style={{ marginBottom: '15px', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                OTT Platforms
+              </h3>
+              
+              {/* Add new OTT Form */}
+              <form onSubmit={handleAddOttPlatform} style={{ marginBottom: '20px', display: 'flex', gap: '8px' }}>
+                <input 
+                  type="text" 
+                  placeholder="New OTT name..." 
+                  value={newOttName}
+                  onChange={(e) => setNewOttName(e.target.value)}
+                  style={{ flex: 1, padding: '6px 10px', fontSize: '13px' }}
+                />
+                <button type="submit" className="btn btn-primary btn-sm" disabled={!newOttName.trim()}>
+                  Add
+                </button>
+              </form>
+
+              {/* Platforms list buttons */}
+              {ottPlatforms.length === 0 ? (
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No platforms found.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {ottPlatforms.map(platform => (
+                    <button
+                      key={platform.id}
+                      type="button"
+                      onClick={() => setSelectedOtt(platform)}
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '10px',
+                        borderRadius: '4px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: selectedOtt?.id === platform.id ? 'var(--bg-surface-elevated)' : 'transparent',
+                        color: selectedOtt?.id === platform.id ? 'var(--text-main)' : 'var(--text-muted)',
+                        fontWeight: selectedOtt?.id === platform.id ? 'bold' : 'normal',
+                        cursor: 'pointer',
+                        fontSize: '13px'
+                      }}
+                    >
+                      {platform.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* RIGHT COLUMN: STOCK MANAGEMENT FOR SELECTED OTT */}
+            <div className="admin-settings-card" style={{ flex: '2 1 450px', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '20px' }}>
+              {selectedOtt ? (
+                <>
+                  <h3 className="card-subtitle" style={{ marginBottom: '5px', fontSize: '1rem', color: 'var(--text-main)' }}>
+                    Manage Stock: {selectedOtt.name}
+                  </h3>
+                  <p className="input-help" style={{ marginBottom: '20px' }}>
+                    Upload invitation links, accounts, or promo codes for the active products listed under this platform.
+                  </p>
+
+                  {ottProducts.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', border: '1px dashed var(--border-color)', borderRadius: '4px' }}>
+                      <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', marginBottom: '10px' }}>No products found under this platform.</p>
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary btn-sm" 
+                        onClick={() => {
+                          setNewProduct(prev => ({ ...prev, platform: selectedOtt.name }));
+                          setAdminTab('products');
+                        }}
+                      >
+                        Create Product for {selectedOtt.name}
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Key Upload Form */}
+                      <form onSubmit={handleUploadStockTabKeys} style={{ marginBottom: '30px', paddingBottom: '20px', borderBottom: '1px solid var(--border-color)' }}>
+                        <div className="form-group">
+                          <label htmlFor="stock-product-select">Select Product Model</label>
+                          <select
+                            id="stock-product-select"
+                            value={selectedProductForStock}
+                            onChange={(e) => setSelectedProductForStock(e.target.value)}
+                            style={{ width: '100%', padding: '8px', fontSize: '13.5px' }}
+                          >
+                            {ottProducts.map(p => (
+                              <option key={p.id} value={p.id}>{p.name} ({p.currency}{p.price})</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: '15px' }}>
+                          <label>Stock Type</label>
+                          <div style={{ display: 'flex', gap: '20px', marginTop: '5px', flexWrap: 'wrap' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                              <input 
+                                type="radio" 
+                                name="stock-type" 
+                                checked={stockUploadType === 'code'} 
+                                onChange={() => setStockUploadType('code')} 
+                              />
+                              Promo Code / Key
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                              <input 
+                                type="radio" 
+                                name="stock-type" 
+                                checked={stockUploadType === 'link'} 
+                                onChange={() => setStockUploadType('link')} 
+                              />
+                              Invite Link
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                              <input 
+                                type="radio" 
+                                name="stock-type" 
+                                checked={stockUploadType === 'credentials'} 
+                                onChange={() => setStockUploadType('credentials')} 
+                              />
+                              Credentials (Email:Password)
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                              <input 
+                                type="radio" 
+                                name="stock-type" 
+                                checked={stockUploadType === 'login_code'} 
+                                onChange={() => setStockUploadType('login_code')} 
+                              />
+                              Login with Code
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="form-group">
+                          <label htmlFor="stock-upload-text">
+                            {stockUploadType === 'code' && 'Paste Codes / Promo Keys (One per line)'}
+                            {stockUploadType === 'link' && 'Paste Invitation URLs / Links (One per line)'}
+                            {stockUploadType === 'credentials' && 'Paste Credentials List (One email:password per line)'}
+                            {stockUploadType === 'login_code' && 'Paste Login Codes (One per line)'}
+                          </label>
+                          <textarea
+                            id="stock-upload-text"
+                            required
+                            placeholder={
+                              stockUploadType === 'code' ? "ABCD-EFGH-IJKL\nMNOP-QRST-UVWX" :
+                              stockUploadType === 'link' ? "https://spotify.com/invite/123456\nhttps://spotify.com/invite/789101" :
+                              stockUploadType === 'credentials' ? "user1@test.com:secret123\nuser2@test.com:pass456" :
+                              "LOGIN-CODE-10293\nLOGIN-CODE-48201"
+                            }
+                            rows={4}
+                            value={stockUploadText}
+                            onChange={(e) => setStockUploadText(e.target.value)}
+                            style={{ fontFamily: 'monospace', fontSize: '13px' }}
+                          />
+                          <span className="input-help">
+                            {stockUploadType === 'credentials' && 'System formats each line to Email: user@domain | Pass: password.'}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                          <button type="submit" className="btn btn-primary" disabled={!stockUploadText.trim()}>
+                            Add to Inventory
+                          </button>
+                        </div>
+                      </form>
+
+                      {/* Current product inventory table */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '10px' }}>
+                        <h4 style={{ fontSize: '13.5px', fontWeight: 'bold', margin: 0 }}>Current Inventory Stock</h4>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Filter type:</span>
+                          <select
+                            value={filterStockType}
+                            onChange={(e) => setFilterStockType(e.target.value)}
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '12px',
+                              borderRadius: '4px',
+                              border: '1px solid var(--border-color)',
+                              backgroundColor: 'var(--input-bg)',
+                              color: 'var(--text-main)',
+                              outline: 'none'
+                            }}
+                          >
+                            <option value="all">All</option>
+                            <option value="code">Promo Code / Key</option>
+                            <option value="link">Invite Link</option>
+                            <option value="credentials">Credentials</option>
+                            <option value="login_code">Login with Code</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {loadingStockTabKeys ? (
+                        <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading inventory...</p>
+                      ) : stockTabKeys.length === 0 ? (
+                        <div style={{ padding: '20px', textAlign: 'center', border: '1px dashed var(--border-color)', borderRadius: '4px' }}>
+                          <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0 }}>This product is currently out of stock.</p>
+                        </div>
+                      ) : (
+                        <div style={{ maxHeight: '350px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '4px' }}>
+                          <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                            <thead>
+                              <tr style={{ backgroundColor: 'var(--bg-surface-elevated)', borderBottom: '1px solid var(--border-color)' }}>
+                                <th style={{ padding: '8px 10px' }}>Value / Code / Link</th>
+                                <th style={{ padding: '8px 10px' }}>Status</th>
+                                <th style={{ padding: '8px 10px' }}>Claimed Order Details</th>
+                                <th style={{ padding: '8px 10px', textAlign: 'right' }}>Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {stockTabKeys
+                                .filter(k => filterStockType === 'all' || k.type === filterStockType)
+                                .map(k => (
+                                <tr key={k.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                  <td style={{ padding: '8px 10px', fontFamily: 'monospace', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    <span title={k.key_value}>{k.key_value}</span>
+                                  </td>
+                                  <td style={{ padding: '8px 10px' }}>
+                                    {k.is_used ? (
+                                      <span className="badge badge-rejected" style={{ fontSize: '10px', padding: '2px 6px' }}>Claimed</span>
+                                    ) : (
+                                      <span className="badge badge-approved" style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#34c759' }}>Available</span>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '8px 10px', color: 'var(--text-muted)', fontSize: '11px' }}>
+                                    {k.is_used ? (
+                                      <div>
+                                        <div style={{ fontWeight: 'bold' }}>UTR: {k.order_utr}</div>
+                                        <div>User: {k.order_user}</div>
+                                      </div>
+                                    ) : (
+                                      '-'
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                      <button
+                                        type="button"
+                                        className="btn btn-secondary btn-sm"
+                                        style={{ padding: '2px 6px', fontSize: '10px', borderRadius: '4px' }}
+                                        onClick={() => setEditKeyModal({ show: true, keyId: k.id, keyValue: k.key_value, keyType: k.type || 'code' })}
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm"
+                                        style={{ padding: '2px 6px', fontSize: '10px', color: '#ff3b30', border: '1px solid #ff3b30', background: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                                        onClick={() => handleDeleteStockTabKey(k.id)}
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              ) : (
+                <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  Select an OTT platform from the left column to manage stock keys, codes, credentials, and links.
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {adminTab === 'analytics' && (
+        <div className="admin-tab-content">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+            <h3 className="card-subtitle" style={{ margin: 0 }}>Traffic & Store Overview</h3>
+            <button className="btn btn-secondary btn-sm" onClick={loadAnalytics} disabled={loadingAnalytics}>
+              {loadingAnalytics ? 'Refreshing...' : '↻ Refresh Data'}
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '30px' }}>
+            <div className="admin-stat-card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-elevated)' }}>
+              <span className="admin-stat-label" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Total Visitor Count</span>
+              <strong className="admin-stat-value" style={{ display: 'block', fontSize: '1.8rem', marginTop: '10px', color: 'var(--primary-color)' }}>{analytics?.visits || 0}</strong>
+            </div>
+            <div className="admin-stat-card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-elevated)' }}>
+              <span className="admin-stat-label" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Registered Users</span>
+              <strong className="admin-stat-value" style={{ display: 'block', fontSize: '1.8rem', marginTop: '10px', color: 'var(--primary-color)' }}>{analytics?.users || 0}</strong>
+            </div>
+            <div className="admin-stat-card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-elevated)' }}>
+              <span className="admin-stat-label" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Total Orders Placed</span>
+              <strong className="admin-stat-value" style={{ display: 'block', fontSize: '1.8rem', marginTop: '10px', color: 'var(--primary-color)' }}>{analytics?.orders || 0}</strong>
+            </div>
+            <div className="admin-stat-card" style={{ padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-elevated)' }}>
+              <span className="admin-stat-label" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Total Store Revenue</span>
+              <strong className="admin-stat-value" style={{ display: 'block', fontSize: '1.8rem', marginTop: '10px', color: '#25D366' }}>
+                ₹{(analytics?.revenue || 0).toFixed(2)}
+              </strong>
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '20px', lineHeight: '1.6' }}>
+            <h4 style={{ margin: '0 0 10px 0', fontSize: '0.95rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-main)' }}>Traffic Summary</h4>
+            <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+              Every time a client opens the storefront page, a unique visit log entry is processed. Approved order amounts are aggregated in real-time to compute the total revenue value. Use these stats to gauge storefront activity and user engagement.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {adminTab === 'users' && (
+        <div className="admin-tab-content">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+            <h3 className="card-subtitle" style={{ margin: 0 }}>Registered System Users</h3>
+            <button className="btn btn-secondary btn-sm" onClick={loadAdminUsers} disabled={loadingAdminUsers}>
+              {loadingAdminUsers ? 'Refreshing...' : '↻ Refresh Users'}
+            </button>
+          </div>
+
+          <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-elevated)' }}>
+                    <th style={{ padding: '12px', fontWeight: 'bold' }}>Email Address</th>
+                    <th style={{ padding: '12px', fontWeight: 'bold' }}>Role</th>
+                    <th style={{ padding: '12px', fontWeight: 'bold' }}>Status</th>
+                    <th style={{ padding: '12px', fontWeight: 'bold', textAlign: 'center' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan="4" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                        No registered users found.
+                      </td>
+                    </tr>
+                  ) : (
+                    adminUsers.map(user => {
+                      const isUserBanned = !!user.is_banned;
+                      const isSelf = user.email === currentUser?.email;
+                      return (
+                        <tr key={user.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                          <td style={{ padding: '12px' }}>
+                            {user.email} {isSelf && <span style={{ fontSize: '0.75rem', color: 'var(--primary-color)', marginLeft: '5px' }}>(You)</span>}
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <span style={{ 
+                              padding: '3px 8px', 
+                              borderRadius: '4px', 
+                              fontSize: '0.75rem', 
+                              fontWeight: '600',
+                              backgroundColor: user.role === 'admin' ? 'rgba(0,124,255,0.15)' : 'rgba(255,255,255,0.05)',
+                              color: user.role === 'admin' ? 'var(--primary-color)' : 'var(--text-muted)'
+                            }}>
+                              {user.role}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            {isUserBanned ? (
+                              <span style={{ color: 'var(--danger-color)', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                🔴 Banned
+                              </span>
+                            ) : (
+                              <span style={{ color: '#25D366', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                🟢 Active
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                            {user.role === 'admin' ? (
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Protected</span>
+                            ) : isUserBanned ? (
+                              <button 
+                                className="btn btn-secondary btn-xs" 
+                                style={{ padding: '4px 10px', fontSize: '11px', color: '#25D366' }}
+                                onClick={() => handleUnbanUser(user)}
+                              >
+                                Unban User
+                              </button>
+                            ) : (
+                              <button 
+                                className="btn btn-danger btn-xs" 
+                                style={{ padding: '4px 10px', fontSize: '11px' }}
+                                onClick={() => handleBanUser(user)}
+                              >
+                                Ban User
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* STOCK MANAGEMENT MODAL */}
       {activeStockProduct && (
         <div className="modal-backdrop">
@@ -2594,14 +3936,24 @@ function AdminPanelView({
                         </td>
                         <td style={{ padding: '6px 4px', textAlign: 'right' }}>
                           {!keyItem.is_used ? (
-                            <button 
-                              type="button" 
-                              className="btn btn-danger btn-sm" 
-                              onClick={() => handleDeleteKey(keyItem.id)}
-                              style={{ padding: '2px 6px', fontSize: '10px' }}
-                            >
-                              Delete
-                            </button>
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                              <button 
+                                type="button" 
+                                className="btn btn-secondary btn-sm" 
+                                onClick={() => setEditKeyModal({ show: true, keyId: keyItem.id, keyValue: keyItem.key_value, keyType: keyItem.type || 'code' })}
+                                style={{ padding: '2px 6px', fontSize: '10px' }}
+                              >
+                                Edit
+                              </button>
+                              <button 
+                                type="button" 
+                                className="btn btn-danger btn-sm" 
+                                onClick={() => handleDeleteKey(keyItem.id)}
+                                style={{ padding: '2px 6px', fontSize: '10px' }}
+                              >
+                                Delete
+                              </button>
+                            </div>
                           ) : (
                             <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Locked</span>
                           )}
@@ -2772,5 +4124,254 @@ function TermsView() {
         </p>
       </div>
     </section>
+  );
+}
+
+function ImageCropperModal({ show, imageFile, aspect, onCrop, onCancel }) {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [imageSrc, setImageSrc] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [localAspect, setLocalAspect] = useState(1);
+  const imageRef = useRef(null);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    if (aspect) {
+      setLocalAspect(aspect);
+    }
+  }, [aspect]);
+
+  useEffect(() => {
+    if (!imageFile) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImageSrc(reader.result);
+    };
+    reader.readAsDataURL(imageFile);
+    
+    // Reset values
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [imageFile]);
+
+  if (!show || !imageFile) return null;
+
+  // Frame dimension based on local aspect ratio
+  // Max width/height bounding box is 300px
+  let frameWidth = 280;
+  let frameHeight = 280;
+
+  if (localAspect === 1.777) { // 16:9
+    frameWidth = 320;
+    frameHeight = 180;
+  } else if (localAspect === 1.333) { // 4:3
+    frameWidth = 300;
+    frameHeight = 225;
+  } else if (localAspect === 'free') {
+    frameWidth = 300;
+    frameHeight = 300;
+  } else if (localAspect === 1) { // 1:1
+    frameWidth = 280;
+    frameHeight = 280;
+  }
+
+  const handlePointerDown = (e) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    e.target.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e) => {
+    if (!isDragging) return;
+    setPan({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y
+    });
+  };
+
+  const handlePointerUp = (e) => {
+    setIsDragging(false);
+    e.target.releasePointerCapture(e.pointerId);
+  };
+
+  const handleSave = () => {
+    const img = imageRef.current;
+    if (!img) return;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // High resolution target size
+    const targetWidth = frameWidth * 2;
+    const targetHeight = frameHeight * 2;
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+
+    ctx.clearRect(0, 0, targetWidth, targetHeight);
+    ctx.save();
+    
+    // Move coordinate system to center
+    ctx.translate(targetWidth / 2, targetHeight / 2);
+
+    // Scaling factor from screen to canvas coordinates
+    const scale = targetWidth / frameWidth;
+    
+    // Apply translation from panning
+    ctx.translate(pan.x * scale, pan.y * scale);
+    
+    // Apply zoom
+    ctx.scale(zoom, zoom);
+
+    // Draw the image centered
+    const imgAspect = img.naturalWidth / img.naturalHeight;
+    const frameAspect = frameWidth / frameHeight;
+
+    let drawWidth, drawHeight;
+    if (imgAspect > frameAspect) {
+      // Image is wider than frame - fill height
+      drawHeight = frameHeight * scale;
+      drawWidth = drawHeight * imgAspect;
+    } else {
+      // Image is taller than frame - fill width
+      drawWidth = frameWidth * scale;
+      drawHeight = drawWidth / imgAspect;
+    }
+
+    ctx.drawImage(img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+    ctx.restore();
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const croppedFile = new File([blob], imageFile.name, {
+        type: imageFile.type,
+        lastModified: Date.now()
+      });
+      onCrop(croppedFile);
+    }, imageFile.type);
+  };
+
+  return (
+    <div className="modal-backdrop" style={{ zIndex: 1100 }}>
+      <div className="modal-card" style={{ maxWidth: '400px', padding: '20px' }}>
+        <h3 className="modal-title" style={{ margin: '0 0 10px 0', fontSize: '16px' }}>Crop Image</h3>
+        <p className="modal-subtitle" style={{ margin: '0 0 15px 0', fontSize: '12px' }}>
+          Drag the image to pan and use the slider to zoom.
+        </p>
+
+        {/* Aspect Ratio Selector */}
+        <div style={{ marginBottom: '15px' }}>
+          <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>Select Aspect Ratio</span>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button 
+              type="button" 
+              className={`btn btn-xs ${localAspect === 1 ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: '11px', padding: '4px 8px' }}
+              onClick={() => setLocalAspect(1)}
+            >
+              1:1 (Square)
+            </button>
+            <button 
+              type="button" 
+              className={`btn btn-xs ${localAspect === 1.777 ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: '11px', padding: '4px 8px' }}
+              onClick={() => setLocalAspect(1.777)}
+            >
+              16:9
+            </button>
+            <button 
+              type="button" 
+              className={`btn btn-xs ${localAspect === 1.333 ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: '11px', padding: '4px 8px' }}
+              onClick={() => setLocalAspect(1.333)}
+            >
+              4:3
+            </button>
+            <button 
+              type="button" 
+              className={`btn btn-xs ${localAspect === 'free' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ fontSize: '11px', padding: '4px 8px' }}
+              onClick={() => setLocalAspect('free')}
+            >
+              Free
+            </button>
+          </div>
+        </div>
+
+        {/* Cropping Frame Box */}
+        <div 
+          ref={containerRef}
+          style={{
+            width: `${frameWidth}px`,
+            height: `${frameHeight}px`,
+            overflow: 'hidden',
+            position: 'relative',
+            backgroundColor: '#000',
+            borderRadius: '8px',
+            margin: '0 auto 15px auto',
+            border: '2px solid var(--border-color)',
+            cursor: 'move',
+            touchAction: 'none'
+          }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+        >
+          {imageSrc && (
+            <img 
+              ref={imageRef}
+              src={imageSrc} 
+              alt="To Crop"
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                maxWidth: 'none',
+                maxHeight: 'none',
+                // Size mapping: cover the frame
+                width: 'auto',
+                height: '100%',
+                transform: `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                transformOrigin: 'center',
+                userSelect: 'none',
+                pointerEvents: 'none'
+              }}
+            />
+          )}
+          {/* Subtle grid lines for premium crop look */}
+          <div style={{ position: 'absolute', inset: 0, border: '1px dashed rgba(255,255,255,0.3)', pointerEvents: 'none' }}></div>
+          <div style={{ position: 'absolute', left: '33.33%', right: '33.33%', top: 0, bottom: 0, borderLeft: '1px dashed rgba(255,255,255,0.2)', borderRight: '1px dashed rgba(255,255,255,0.2)', pointerEvents: 'none' }}></div>
+          <div style={{ position: 'absolute', top: '33.33%', bottom: '33.33%', left: 0, right: 0, borderTop: '1px dashed rgba(255,255,255,0.2)', borderBottom: '1px dashed rgba(255,255,255,0.2)', pointerEvents: 'none' }}></div>
+        </div>
+
+        {/* Zoom Slider */}
+        <div className="form-group" style={{ marginBottom: '15px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '5px' }}>
+            <span>Zoom</span>
+            <span>{Math.round(zoom * 100)}%</span>
+          </div>
+          <input 
+            type="range" 
+            min="1" 
+            max="3" 
+            step="0.01" 
+            value={zoom} 
+            onChange={(e) => setZoom(parseFloat(e.target.value))} 
+            style={{ width: '100%', cursor: 'pointer' }}
+          />
+        </div>
+
+        {/* Crop Controls */}
+        <div className="modal-actions" style={{ marginTop: '20px' }}>
+          <button type="button" className="btn btn-secondary" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className="btn btn-primary" onClick={handleSave}>
+            Crop & Apply
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

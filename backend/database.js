@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-const { User, Product, Setting } = require('./models');
+const { User, Product, Setting, OttPlatform } = require('./models');
 
 // Load environment variables
 require('dotenv').config();
@@ -136,6 +136,16 @@ async function seedDefaultData() {
       await new Setting({ key: 'email_from', value: process.env.EMAIL_FROM || 'onboarding@resend.dev' }).save();
     }
     console.log('[Database] Seeded default settings');
+
+    // 5. Seed OTT Platforms from unique platforms in products
+    const platformCount = await OttPlatform.countDocuments();
+    if (platformCount === 0) {
+      const uniquePlatforms = await Product.distinct('platform');
+      const platformsToSeed = uniquePlatforms.length > 0 ? uniquePlatforms : ['Netflix', 'Spotify', 'Canva', 'Steam', 'NordVPN', 'Microsoft'];
+      const newPlatforms = platformsToSeed.map(p => ({ name: p }));
+      await OttPlatform.insertMany(newPlatforms);
+      console.log(`[Database] Seeded ${platformsToSeed.length} OTT platforms:`, platformsToSeed);
+    }
 
   } catch (err) {
     console.error('[Database] Seeding error:', err);
