@@ -241,7 +241,18 @@ export default function App() {
       };
       const fullUrl = url.startsWith('http') ? url : `${API_BASE}${url}`;
       const res = await fetch(fullUrl, fetchOptions);
-      const data = await res.json();
+      
+      let data = {};
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        // If it's a long HTML error page, truncate it for readability in toast
+        const truncatedText = text.length > 60 ? text.substring(0, 60) + '...' : text;
+        data = { error: truncatedText || `HTTP Error ${res.status}: ${res.statusText}` };
+      }
+
       if (!res.ok) {
         throw new Error(data.error || 'Request failed');
       }
