@@ -36,6 +36,13 @@ async function seedDefaultData() {
         role: 'admin'
       }).save();
       console.log(`[Database] Seeded default admin: ${defaultAdminEmail}`);
+    } else {
+      const isPasswordSame = bcrypt.compareSync(defaultAdminPassword, adminExists.password_hash);
+      if (!isPasswordSame) {
+        adminExists.password_hash = bcrypt.hashSync(defaultAdminPassword, 10);
+        await adminExists.save();
+        console.log(`[Database] Updated existing admin password to match .env config.`);
+      }
     }
 
     // 2. Seed Default User
