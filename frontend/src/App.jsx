@@ -3,7 +3,8 @@ import './App.css';
 import ProtectedRoute from './ProtectedRoute';
 
 // API Base URL config for cross-origin (Cloudflare Pages -> Render)
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_BASE = import.meta.env.VITE_API_URL || 
+                 (import.meta.env.MODE === 'production' ? 'https://ottsolution.onrender.com' : '');
 
 // Helper to resolve image paths: prepends API_BASE to local uploads (e.g. /uploads/...)
 const resolveUrl = (url) => {
