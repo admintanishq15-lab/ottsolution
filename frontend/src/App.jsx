@@ -283,6 +283,7 @@ export default function App() {
 
   // --- Order Loaders ---
   const loadUserOrders = async () => {
+    if (!currentUser) return;
     try {
       const data = await apiRequest('/api/orders');
       setUserOrders(data);
@@ -290,6 +291,7 @@ export default function App() {
   };
 
   const loadAdminOrders = async () => {
+    if (!currentUser || currentUser.role !== 'admin') return;
     try {
       const data = await apiRequest('/api/admin/orders');
       setAdminOrders(data);
@@ -305,6 +307,7 @@ export default function App() {
   };
 
   const loadAnalytics = async () => {
+    if (!currentUser || currentUser.role !== 'admin') return;
     setLoadingAnalytics(true);
     try {
       const data = await apiRequest('/api/admin/analytics');
@@ -316,6 +319,7 @@ export default function App() {
   };
 
   const loadAdminUsers = async () => {
+    if (!currentUser || currentUser.role !== 'admin') return;
     setLoadingAdminUsers(true);
     try {
       const data = await apiRequest('/api/admin/users');
