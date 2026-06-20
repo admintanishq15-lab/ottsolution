@@ -275,6 +275,20 @@ async function sendInviteEmail(toEmail, inviteLink, productName, currency, price
 
 async function allocateKeyForOrder(orderId, productId) {
   try {
+    const product = await Product.findById(productId);
+    if (product && product.stock_type === 'login_code') {
+      const mockKey = new ProductKey({
+        product_id: productId,
+        key_value: 'Direct WhatsApp Activation',
+        type: 'login_code',
+        is_used: true,
+        order_id: orderId
+      });
+      await mockKey.save();
+      console.log(`[Stock] Generated mock login_code key for order ${orderId}`);
+      return mockKey.key_value;
+    }
+
     const availableKey = await ProductKey.findOne({ product_id: productId, is_used: false });
     if (availableKey) {
       availableKey.is_used = true;

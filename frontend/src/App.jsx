@@ -758,8 +758,15 @@ export default function App() {
                              prod.stock_type === 'credentials' ? 'Credentials' :
                              prod.stock_type === 'login_code' ? 'Login Code' : 'Voucher'}
                       </span>
-                      <span style={{ padding: '2px 6px', backgroundColor: prod.stock_count > 0 ? 'rgba(37,211,102,0.1)' : 'rgba(255,59,48,0.1)', borderRadius: '4px', border: '1px solid var(--border-color)', color: prod.stock_count > 0 ? '#25D366' : 'var(--danger-color)', fontWeight: 'bold' }}>
-                        📦 {prod.stock_count > 0 ? `${prod.stock_count} Available` : 'Out of Stock'}
+                      <span style={{ 
+                        padding: '2px 6px', 
+                        backgroundColor: (prod.stock_count > 0 || prod.stock_type === 'login_code') ? 'rgba(37,211,102,0.1)' : 'rgba(255,59,48,0.1)', 
+                        borderRadius: '4px', 
+                        border: '1px solid var(--border-color)', 
+                        color: (prod.stock_count > 0 || prod.stock_type === 'login_code') ? '#25D366' : 'var(--danger-color)', 
+                        fontWeight: 'bold' 
+                      }}>
+                        📦 {prod.stock_type === 'login_code' ? 'WhatsApp Setup' : prod.stock_count > 0 ? `${prod.stock_count} Available` : 'Out of Stock'}
                       </span>
                     </div>
 
@@ -826,8 +833,8 @@ export default function App() {
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-muted)', display: 'block', marginBottom: '2px' }}>Available Quantity</span>
-                    <strong style={selectedProduct.stock_count > 0 ? { color: '#25D366' } : { color: 'var(--danger-color)' }}>
-                      {selectedProduct.stock_count > 0 ? `${selectedProduct.stock_count} units` : 'Out of Stock'}
+                    <strong style={(selectedProduct.stock_count > 0 || selectedProduct.stock_type === 'login_code') ? { color: '#25D366' } : { color: 'var(--danger-color)' }}>
+                      {selectedProduct.stock_type === 'login_code' ? 'WhatsApp Setup' : selectedProduct.stock_count > 0 ? `${selectedProduct.stock_count} units` : 'Out of Stock'}
                     </strong>
                   </div>
                   {selectedProduct.duration && (
@@ -1634,8 +1641,8 @@ function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUP
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: 'var(--text-muted)' }}>Inventory Status</span>
-              <strong style={product.stock_count > 0 ? { color: '#25D366' } : { color: 'var(--danger-color)' }}>
-                {product.stock_count > 0 ? `${product.stock_count} units` : 'Out of Stock'}
+              <strong style={(product.stock_count > 0 || product.stock_type === 'login_code') ? { color: '#25D366' } : { color: 'var(--danger-color)' }}>
+                {product.stock_type === 'login_code' ? 'WhatsApp Setup' : product.stock_count > 0 ? `${product.stock_count} units` : 'Out of Stock'}
               </strong>
             </div>
           </div>
@@ -1945,25 +1952,11 @@ function UserOrdersView({ orders, currentUser, showToast }) {
                             </div>
                           ) : order.key_type === 'login_code' ? (
                             <div>
-                              <span style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>Login Code:</span>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: 'var(--bg-surface-elevated)', border: '1px dashed var(--border-color)', borderRadius: '6px', marginBottom: '12px' }}>
-                                <code style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 'bold', color: 'var(--primary-color)' }}>{order.key_value}</code>
-                                <button 
-                                  className="btn btn-secondary btn-xs" 
-                                  style={{ padding: '2px 6px', fontSize: '11px' }}
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(order.key_value);
-                                    showToast('Login code copied!');
-                                  }}
-                                >
-                                  Copy
-                                </button>
-                              </div>
-                              <div style={{ backgroundColor: 'rgba(255,193,7,0.1)', border: '1px solid rgba(255,193,7,0.3)', borderRadius: '6px', padding: '12px', fontSize: '0.85rem', color: 'var(--text-main)' }}>
-                                <p style={{ margin: '0 0 10px 0' }}>⚠️ <strong>Action Required:</strong> Please contact support to activate this code on your device.</p>
-                                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                              <div style={{ backgroundColor: 'rgba(37,211,102,0.1)', border: '1px solid rgba(37,211,102,0.3)', borderRadius: '6px', padding: '12px', fontSize: '0.85rem', color: 'var(--text-main)' }}>
+                                <p style={{ margin: '0 0 10px 0' }}>💡 <strong>Manual Setup Required:</strong> This subscription uses <strong>Login with Code</strong>. Please connect with our support team on WhatsApp or Email to complete your login procedure.</p>
+                                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '10px' }}>
                                   <a 
-                                    href={`https://wa.me/917017750272?text=${encodeURIComponent(`Hi support!\n\nI need to activate my Login Code.\n\nItem Name: ${order.product_name}\nQuantity: 1\nUTR Reference: ${order.utr_number}\nLogin Code: ${order.key_value}`)}`} 
+                                    href={`https://wa.me/917017750272?text=${encodeURIComponent(`Hi support!\n\nI ordered ${order.product_name} (Login with Code).\n\nOrder Details:\nQuantity: 1\nUTR Reference: ${order.utr_number}`)}`} 
                                     target="_blank" 
                                     rel="noreferrer" 
                                     className="btn btn-xs" 
@@ -1972,14 +1965,14 @@ function UserOrdersView({ orders, currentUser, showToast }) {
                                     <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style={{ marginRight: '2px' }}>
                                       <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L0 24l6.335-1.662c1.746.953 3.71 1.455 5.703 1.457h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
                                     </svg>
-                                    Activate via WhatsApp
+                                    Go to WhatsApp for Login
                                   </a>
                                   <a 
-                                    href={`mailto:support@ottsolution.com?subject=${encodeURIComponent(`Login Code Activation Request - UTR: ${order.utr_number}`)}&body=${encodeURIComponent(`Hello support team!\n\nI need to activate my Login Code.\n\nOrder Details:\nItem Name: ${order.product_name}\nQuantity: 1\nUTR Reference: ${order.utr_number}\nLogin Code: ${order.key_value}\n\nThank you!`)}`} 
+                                    href={`mailto:support@ottsolution.com?subject=${encodeURIComponent(`Login Setup Request - UTR: ${order.utr_number}`)}&body=${encodeURIComponent(`Hello support team!\n\nI need to set up my Login with Code subscription.\n\nOrder Details:\nItem Name: ${order.product_name}\nQuantity: 1\nUTR Reference: ${order.utr_number}\n\nThank you!`)}`} 
                                     className="btn btn-secondary btn-xs" 
                                     style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
                                   >
-                                    ✉ Activate via Email
+                                    ✉️ Proceed via Email
                                   </a>
                                 </div>
                               </div>
@@ -3533,21 +3526,37 @@ function AdminPanelView({
                     </div>
                   ) : (
                     <>
-                      {/* Key Upload Form */}
-                      <form onSubmit={handleUploadStockTabKeys} style={{ marginBottom: '30px', paddingBottom: '20px', borderBottom: '1px solid var(--border-color)' }}>
-                        <div className="form-group">
-                          <label htmlFor="stock-product-select">Select Product Model</label>
-                          <select
-                            id="stock-product-select"
-                            value={selectedProductForStock}
-                            onChange={(e) => setSelectedProductForStock(e.target.value)}
-                            style={{ width: '100%', padding: '8px', fontSize: '13.5px' }}
-                          >
-                            {ottProducts.map(p => (
-                              <option key={p.id} value={p.id}>{p.name} ({p.currency}{p.price})</option>
-                            ))}
-                          </select>
-                        </div>
+                      <div className="form-group" style={{ marginBottom: '20px' }}>
+                        <label htmlFor="stock-product-select">Select Product Model</label>
+                        <select
+                          id="stock-product-select"
+                          value={selectedProductForStock}
+                          onChange={(e) => setSelectedProductForStock(e.target.value)}
+                          style={{ width: '100%', padding: '8px', fontSize: '13.5px' }}
+                        >
+                          {ottProducts.map(p => (
+                            <option key={p.id} value={p.id}>{p.name} ({p.currency}{p.price})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {(() => {
+                        const selectedProductObj = ottProducts.find(p => p.id === selectedProductForStock);
+                        if (selectedProductObj && selectedProductObj.stock_type === 'login_code') {
+                          return (
+                            <div style={{ padding: '30px 20px', textAlign: 'center', backgroundColor: 'var(--bg-surface-elevated)', border: '1px dashed var(--border-color)', borderRadius: '6px' }}>
+                              <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '10px' }}>📱</span>
+                              <h4 style={{ margin: '0 0 10px 0', color: 'var(--text-main)' }}>Login with Code Subscription</h4>
+                              <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', margin: 0, lineHeight: '1.5' }}>
+                                This product is configured for manual login activation. No stock keys are required. Setup is completed via WhatsApp/Email when user orders are approved.
+                              </p>
+                            </div>
+                          );
+                        }
+                        return (
+                          <>
+                            {/* Key Upload Form */}
+                            <form onSubmit={handleUploadStockTabKeys} style={{ marginBottom: '30px', paddingBottom: '20px', borderBottom: '1px solid var(--border-color)' }}>
 
                         <div className="form-group" style={{ marginBottom: '15px' }}>
                           <label>Stock Type</label>
@@ -3719,6 +3728,9 @@ function AdminPanelView({
                           </table>
                         </div>
                       )}
+                          </>
+                        );
+                      })()}
                     </>
                   )}
                 </>
@@ -3874,95 +3886,107 @@ function AdminPanelView({
               Add new credentials or group invitation links, and review active inventory items.
             </p>
             
-            {/* Add stock keys form */}
-            <form onSubmit={handleAddKeys} style={{ marginBottom: '25px', paddingBottom: '20px', borderBottom: '1px solid var(--border-color)' }}>
-              <div className="form-group">
-                <label htmlFor="new-keys-text">Paste New Keys / Links (One per line)</label>
-                <textarea
-                  id="new-keys-text"
-                  placeholder="https://spotify.com/invite/...&#10;https://spotify.com/invite/...&#10;or Account Email:Password"
-                  rows={4}
-                  required
-                  value={newKeysText}
-                  onChange={(e) => setNewKeysText(e.target.value)}
-                  style={{ fontFamily: 'monospace', fontSize: '13px' }}
-                />
+            {activeStockProduct.stock_type === 'login_code' ? (
+              <div style={{ padding: '30px 20px', textAlign: 'center', backgroundColor: 'var(--bg-surface-elevated)', border: '1px dashed var(--border-color)', borderRadius: '6px', marginBottom: '20px' }}>
+                <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '10px' }}>📱</span>
+                <h4 style={{ margin: '0 0 10px 0', color: 'var(--text-main)' }}>Login with Code Subscription</h4>
+                <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', margin: 0, lineHeight: '1.5' }}>
+                  This product is configured for manual login activation. You do not need to add any stock keys. When customers place an order, they will be prompted to contact support via WhatsApp/Email to complete the login procedure.
+                </p>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button type="submit" className="btn btn-primary" disabled={submittingKeys || !newKeysText.trim()}>
-                  {submittingKeys ? 'Adding...' : 'Add to Inventory'}
-                </button>
-              </div>
-            </form>
-
-            {/* Inventory List */}
-            <h4 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '10px' }}>Current Inventory</h4>
-            {loadingKeys ? (
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading inventory keys...</p>
-            ) : stockKeys.length === 0 ? (
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px' }}>No stock items found for this product. (Out of Stock)</p>
             ) : (
-              <div style={{ maxHeight: '200px', overflowY: 'auto', marginBottom: '20px', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '10px' }}>
-                <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left' }}>
-                      <th style={{ padding: '6px 4px' }}>Value / Code / Link</th>
-                      <th style={{ padding: '6px 4px' }}>Status</th>
-                      <th style={{ padding: '6px 4px' }}>Details / Order</th>
-                      <th style={{ padding: '6px 4px', textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stockKeys.map((keyItem) => (
-                      <tr key={keyItem.id} style={{ borderBottom: '1px solid #f4f4f5' }}>
-                        <td style={{ padding: '6px 4px', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
-                          <span title={keyItem.key_value}>{keyItem.key_value}</span>
-                        </td>
-                        <td style={{ padding: '6px 4px' }}>
-                          {keyItem.is_used ? (
-                            <span className="badge badge-success" style={{ backgroundColor: '#e1f5fe', color: '#0288d1', padding: '2px 6px', borderRadius: '3px', fontSize: '10px', textTransform: 'uppercase' }}>Claimed</span>
-                          ) : (
-                            <span className="badge badge-warning" style={{ backgroundColor: '#efebe9', color: '#4e342e', padding: '2px 6px', borderRadius: '3px', fontSize: '10px', textTransform: 'uppercase' }}>Available</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '6px 4px', color: 'var(--text-muted)' }}>
-                          {keyItem.is_used ? (
-                            <span title={`Claimed by user: ${keyItem.order_user || ''}`}>
-                              Order: <code>{keyItem.order_utr || keyItem.order_id?.substring(0, 8)}</code>
-                            </span>
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                        <td style={{ padding: '6px 4px', textAlign: 'right' }}>
-                          {!keyItem.is_used ? (
-                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                              <button 
-                                type="button" 
-                                className="btn btn-secondary btn-sm" 
-                                onClick={() => setEditKeyModal({ show: true, keyId: keyItem.id, keyValue: keyItem.key_value, keyType: keyItem.type || 'code' })}
-                                style={{ padding: '2px 6px', fontSize: '10px' }}
-                              >
-                                Edit
-                              </button>
-                              <button 
-                                type="button" 
-                                className="btn btn-danger btn-sm" 
-                                onClick={() => handleDeleteKey(keyItem.id)}
-                                style={{ padding: '2px 6px', fontSize: '10px' }}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          ) : (
-                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Locked</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                {/* Add stock keys form */}
+                <form onSubmit={handleAddKeys} style={{ marginBottom: '25px', paddingBottom: '20px', borderBottom: '1px solid var(--border-color)' }}>
+                  <div className="form-group">
+                    <label htmlFor="new-keys-text">Paste New Keys / Links (One per line)</label>
+                    <textarea
+                      id="new-keys-text"
+                      placeholder="https://spotify.com/invite/...&#10;https://spotify.com/invite/...&#10;or Account Email:Password"
+                      rows={4}
+                      required
+                      value={newKeysText}
+                      onChange={(e) => setNewKeysText(e.target.value)}
+                      style={{ fontFamily: 'monospace', fontSize: '13px' }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                    <button type="submit" className="btn btn-primary" disabled={submittingKeys || !newKeysText.trim()}>
+                      {submittingKeys ? 'Adding...' : 'Add to Inventory'}
+                    </button>
+                  </div>
+                </form>
+
+                {/* Inventory List */}
+                <h4 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '10px' }}>Current Inventory</h4>
+                {loadingKeys ? (
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Loading inventory keys...</p>
+                ) : stockKeys.length === 0 ? (
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '20px' }}>No stock items found for this product. (Out of Stock)</p>
+                ) : (
+                  <div style={{ maxHeight: '200px', overflowY: 'auto', marginBottom: '20px', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '10px' }}>
+                    <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left' }}>
+                          <th style={{ padding: '6px 4px' }}>Value / Code / Link</th>
+                          <th style={{ padding: '6px 4px' }}>Status</th>
+                          <th style={{ padding: '6px 4px' }}>Details / Order</th>
+                          <th style={{ padding: '6px 4px', textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stockKeys.map((keyItem) => (
+                          <tr key={keyItem.id} style={{ borderBottom: '1px solid #f4f4f5' }}>
+                            <td style={{ padding: '6px 4px', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
+                              <span title={keyItem.key_value}>{keyItem.key_value}</span>
+                            </td>
+                            <td style={{ padding: '6px 4px' }}>
+                              {keyItem.is_used ? (
+                                <span className="badge badge-success" style={{ backgroundColor: '#e1f5fe', color: '#0288d1', padding: '2px 6px', borderRadius: '3px', fontSize: '10px', textTransform: 'uppercase' }}>Claimed</span>
+                              ) : (
+                                <span className="badge badge-warning" style={{ backgroundColor: '#efebe9', color: '#4e342e', padding: '2px 6px', borderRadius: '3px', fontSize: '10px', textTransform: 'uppercase' }}>Available</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '6px 4px', color: 'var(--text-muted)' }}>
+                              {keyItem.is_used ? (
+                                <span title={`Claimed by user: ${keyItem.order_user || ''}`}>
+                                  Order: <code>{keyItem.order_utr || keyItem.order_id?.substring(0, 8)}</code>
+                                </span>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td style={{ padding: '6px 4px', textAlign: 'right' }}>
+                              {!keyItem.is_used ? (
+                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                  <button 
+                                    type="button" 
+                                    className="btn btn-secondary btn-sm" 
+                                    onClick={() => setEditKeyModal({ show: true, keyId: keyItem.id, keyValue: keyItem.key_value, keyType: keyItem.type || 'code' })}
+                                    style={{ padding: '2px 6px', fontSize: '10px' }}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button 
+                                    type="button" 
+                                    className="btn btn-danger btn-sm" 
+                                    onClick={() => handleDeleteKey(keyItem.id)}
+                                    style={{ padding: '2px 6px', fontSize: '10px' }}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              ) : (
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Locked</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
             )}
 
             <div className="modal-actions" style={{ marginTop: '15px' }}>
