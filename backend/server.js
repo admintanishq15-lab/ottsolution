@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
+const MongoStore = require('connect-mongo');
+const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const path = require('path');
@@ -12,6 +14,37 @@ const { User, Product, Order, ProductKey, Setting, Notification, OttPlatform, Vi
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Enable CORS for cross-origin API calls (Cloudflare Pages -> Render)
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true); // Allow server-to-server or local script requests
+      
+      const allowedOrigins = [
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'https://ottsolution.online',
+        'https://ottsolution.pages.dev'
+      ];
+      
+      if (process.env.FRONTEND_URL) {
+        allowedOrigins.push(process.env.FRONTEND_URL);
+      }
+      
+      const isAllowed = allowedOrigins.includes(origin) || 
+                        origin.endsWith('.pages.dev') || 
+                        origin.endsWith('.online');
+                        
+      if (isAllowed) {
+        return callback(null, true);
+      } else {
+        return callback(new Error(`Origin ${origin} not allowed by CORS`));
+      }
+    },
+    credentials: true
+  })
+);
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -29,15 +62,20 @@ app.use('/uploads', express.static(uploadsDir));
 // Serve React front-end production build
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// Configure Sessions
+// Configure Sessions with MongoDB Persistence
 app.use(
   session({
     secret: process.env.SESSION_SECRET || 'ott-marketplace-super-secret-key-129837',
     resave: false,
     saveUninitialized: false,
+    store: MongoStore.create({
+      mongoUrl: process.env.MONGO_URI,
+      collectionName: 'sessions'
+    }),
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      secure: false
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
     }
   })
 );

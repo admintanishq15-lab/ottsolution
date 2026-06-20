@@ -2,6 +2,20 @@ import React, { useState, useEffect } from 'react';
 import './App.css';
 import ProtectedRoute from './ProtectedRoute';
 
+// API Base URL config for cross-origin (Cloudflare Pages -> Render)
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
+// Helper to resolve image paths: prepends API_BASE to local uploads (e.g. /uploads/...)
+const resolveUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+    return url;
+  }
+  const base = API_BASE.endsWith('/') ? API_BASE.slice(0, -1) : API_BASE;
+  const path = url.startsWith('/') ? url : `/${url}`;
+  return `${base}${path}`;
+};
+
 export default function App() {
   // --- Global States ---
   const [currentUser, setCurrentUser] = useState(null);
@@ -144,7 +158,7 @@ export default function App() {
   useEffect(() => {
     loadNotifications();
 
-    const eventSource = new EventSource('/api/notifications/stream');
+    const eventSource = new EventSource(`${API_BASE}/api/notifications/stream`, { withCredentials: true });
 
     eventSource.onmessage = (event) => {
       try {
@@ -220,7 +234,12 @@ export default function App() {
   // --- API Fetcher ---
   const apiRequest = async (url, options = {}) => {
     try {
-      const res = await fetch(url, options);
+      const fetchOptions = {
+        ...options,
+        credentials: 'include'
+      };
+      const fullUrl = url.startsWith('http') ? url : `${API_BASE}${url}`;
+      const res = await fetch(fullUrl, fetchOptions);
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Request failed');
@@ -308,7 +327,7 @@ export default function App() {
 
   const logVisit = async () => {
     try {
-      await fetch('/api/visits', { method: 'POST' });
+      await fetch(`${API_BASE}/api/visits`, { method: 'POST', credentials: 'include' });
     } catch (err) {}
   };
 
@@ -537,7 +556,7 @@ export default function App() {
                       navigateTo('details');
                     }}
                   >
-                    <img src={prod.image_url} alt={prod.name} className="suggestion-img" />
+                    <img src={resolveUrl(prod.image_url)} alt={prod.name} className="suggestion-img" />
                     <div className="suggestion-info">
                       <span className="suggestion-title">{prod.name}</span>
                       <span className="suggestion-platform">{prod.platform} • {prod.currency || '$'}{prod.price.toFixed(2)}</span>
@@ -732,7 +751,7 @@ export default function App() {
                   onClick={() => { setSelectedProduct(prod); navigateTo('details'); }}
                 >
                   <div className="product-image-container">
-                    <img className="product-image" src={prod.image_url} alt={prod.name} />
+                    <img className="product-image" src={resolveUrl(prod.image_url)} alt={prod.name} />
                     <span className="platform-badge">{prod.platform}</span>
                   </div>
                   <div className="product-info">
@@ -794,7 +813,7 @@ export default function App() {
             </div>
             <div className="details-layout">
               <div className="details-gallery">
-                <img src={selectedProduct.image_url} alt={selectedProduct.name} />
+                <img src={resolveUrl(selectedProduct.image_url)} alt={selectedProduct.name} />
               </div>
               <div className="details-info-card">
                 <div className="details-badge-row">
@@ -1608,7 +1627,7 @@ function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUP
         <div className="checkout-invoice-card">
           <h2 className="card-title">Order Summary</h2>
           <div className="checkout-product-preview">
-            <img src={product.image_url} alt={product.name} className="preview-img" />
+            <img src={resolveUrl(product.image_url)} alt={product.name} className="preview-img" />
             <div className="preview-details">
               <h4 className="preview-title">{product.name}</h4>
               <span className="preview-platform">{product.platform}</span>
@@ -1678,7 +1697,7 @@ function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUP
                 const upiId = settings?.upi_id || 'pay@ottsolution';
                 const upiQrUrl = settings?.upi_qr_url;
                 const qrSrc = upiQrUrl 
-                  ? upiQrUrl 
+                  ? resolveUrl(upiQrUrl) 
                   : `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`upi://pay?pa=${upiId}&pn=ottsolution`)}`;
 
                 return (
@@ -1842,7 +1861,7 @@ function UserOrdersView({ orders, currentUser, showToast }) {
 
             return (
               <div key={order.id} className="order-item-card">
-                <img src={order.image_url} alt={order.product_name} className="preview-img" />
+                <img src={resolveUrl(order.image_url)} alt={order.product_name} className="preview-img" />
                 <div className="order-info-col">
                   <div className="order-title-row">
                     <span className="order-p-name">{order.product_name}</span>
@@ -3009,8 +3028,8 @@ function AdminPanelView({
                         </td>
                         <td>
                           {order.screenshot_path ? (
-                            <a href={order.screenshot_path} target="_blank" rel="noreferrer">
-                              <img src={order.screenshot_path} alt="Receipt" className="admin-orders-screenshot-preview" />
+                            <a href={resolveUrl(order.screenshot_path)} target="_blank" rel="noreferrer">
+                              <img src={resolveUrl(order.screenshot_path)} alt="Receipt" className="admin-orders-screenshot-preview" />
                             </a>
                           ) : (
                             <span className="text-muted">None</span>
@@ -3249,7 +3268,7 @@ function AdminPanelView({
                         overflow: 'hidden'
                       }}>
                         <img 
-                          src={imagePreviewUrl || newProduct.image_url} 
+                          src={imagePreviewUrl || resolveUrl(newProduct.image_url)} 
                           alt="Product Preview" 
                           style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '4px' }} 
                         />
@@ -3429,7 +3448,7 @@ function AdminPanelView({
                   <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '8px' }}>QR Code Preview:</span>
                   <div style={{ display: 'flex', justifyContent: 'center', backgroundColor: '#fff', padding: '15px', borderRadius: '4px', border: '1px solid var(--border-color)', width: 'fit-content' }}>
                     <img 
-                      src={settings?.upi_qr_url || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`upi://pay?pa=${settings?.upi_id || 'pay@ottsolution'}&pn=ottsolution`)}`}
+                      src={resolveUrl(settings?.upi_qr_url) || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`upi://pay?pa=${settings?.upi_id || 'pay@ottsolution'}&pn=ottsolution`)}`}
                       alt="Active QR Code" 
                       style={{ width: '150px', height: '150px', objectFit: 'contain' }}
                     />
