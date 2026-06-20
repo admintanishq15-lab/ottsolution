@@ -15,6 +15,9 @@ const { User, Product, Order, ProductKey, Setting, Notification, OttPlatform, Vi
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust reverse proxy (Render) to support secure session cookies
+app.set('trust proxy', 1);
+
 // Enable CORS for cross-origin API calls (Cloudflare Pages -> Render)
 app.use(
   cors({
