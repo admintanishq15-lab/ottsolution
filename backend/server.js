@@ -314,6 +314,77 @@ async function sendInviteEmail(toEmail, inviteLink, productName, currency, price
   }
 }
 
+async function sendAdminOrderNotificationEmail(adminEmail, orderId, productName, utrClean, buyerEmail, currency, price) {
+  try {
+    const { apiKey, emailFrom } = await getResendConfig();
+    if (!apiKey) {
+      console.log(`[Email] Skipping admin email alert (no API Key configured). Order ID: ${orderId}`);
+      return;
+    }
+
+    const emailHtml = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px; border: 1px solid #e2e4e1; border-radius: 8px; background-color: #ffffff; color: #1c281b;">
+        <h2 style="font-size: 18px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #457245; padding-bottom: 15px; margin-top: 0; color: #1c281b;">
+          New Order Pending Verification
+        </h2>
+        <p style="font-size: 14px; line-height: 1.5; color: #5e685d; margin-top: 20px;">
+          A buyer has submitted a new checkout request. Details below:
+        </p>
+        <div style="background-color: #f7f6f0; border: 1px solid #e2e4e1; border-radius: 4px; padding: 15px; margin: 20px 0;">
+          <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+            <tr>
+              <td style="color: #5e685d; padding: 4px 0;">Order ID:</td>
+              <td style="font-weight: bold; text-align: right; padding: 4px 0; color: #1c281b;">${orderId}</td>
+            </tr>
+            <tr>
+              <td style="color: #5e685d; padding: 4px 0;">Product:</td>
+              <td style="font-weight: bold; text-align: right; padding: 4px 0; color: #1c281b;">${productName}</td>
+            </tr>
+            <tr>
+              <td style="color: #5e685d; padding: 4px 0;">Buyer Email:</td>
+              <td style="font-weight: bold; text-align: right; padding: 4px 0; color: #1c281b;">${buyerEmail}</td>
+            </tr>
+            <tr>
+              <td style="color: #5e685d; padding: 4px 0;">Price:</td>
+              <td style="font-weight: bold; text-align: right; padding: 4px 0; color: #1c281b;">${currency}${price.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td style="color: #5e685d; padding: 4px 0;">Reference/UTR:</td>
+              <td style="font-weight: bold; text-align: right; padding: 4px 0; color: #1c281b;">${utrClean}</td>
+            </tr>
+          </table>
+        </div>
+        <p style="font-size: 13px; color: #5e685d; margin-top: 20px;">
+          Please log into your Admin Panel to check the payment proof and approve/reject the transaction.
+        </p>
+      </div>
+    `;
+
+    console.log(`[Email] Sending Admin order alert email to ${adminEmail}...`);
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: `Getsubscribed Alerts <${emailFrom}>`,
+        to: adminEmail,
+        subject: `[New Order] ${productName} - UTR Pending Verification`,
+        html: emailHtml
+      })
+    });
+
+    const resData = await response.json();
+    if (!response.ok) {
+      throw new Error(resData.message || 'Resend request failed');
+    }
+    console.log('[Email] Admin notification email sent successfully! Msg ID:', resData.id);
+  } catch (err) {
+    console.error('[Email] Failed to send admin alert email via Resend API:', err.message);
+  }
+}
+
 async function allocateKeyForOrder(orderId, productId) {
   try {
     const product = await Product.findById(productId);
@@ -646,6 +717,24 @@ app.post('/api/checkout', requireAuth, upload.single('screenshot'), async (req, 
       existingOrder.created_at = Date.now();
       await existingOrder.save();
 
+      // Send admin email notification
+      try {
+        const adminUser = await User.findOne({ role: 'admin' });
+        if (adminUser) {
+          await sendAdminOrderNotificationEmail(
+            adminUser.email,
+            existingOrder._id.toString(),
+            product.name,
+            utrClean,
+            req.session.email,
+            existingOrder.currency,
+            existingOrder.amount
+          );
+        }
+      } catch (emailErr) {
+        console.error('[Checkout] Failed to trigger admin notification email:', emailErr);
+      }
+
       // Broadcast admin-only notification of an updated order submission
       await broadcastNotification({
         title: 'Order UTR Updated',
@@ -670,6 +759,24 @@ app.post('/api/checkout', requireAuth, upload.single('screenshot'), async (req, 
         status: 'pending'
       });
       await order.save();
+
+      // Send admin email notification
+      try {
+        const adminUser = await User.findOne({ role: 'admin' });
+        if (adminUser) {
+          await sendAdminOrderNotificationEmail(
+            adminUser.email,
+            order._id.toString(),
+            product.name,
+            utrClean,
+            req.session.email,
+            order.currency,
+            order.amount
+          );
+        }
+      } catch (emailErr) {
+        console.error('[Checkout] Failed to trigger admin notification email:', emailErr);
+      }
 
       // Broadcast admin-only notification of a new checkout submission
       await broadcastNotification({
