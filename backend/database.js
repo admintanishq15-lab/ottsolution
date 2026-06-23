@@ -26,7 +26,7 @@ async function seedDefaultData() {
   try {
     // 1. Seed Default Admin
     const defaultAdminEmail = process.env.ADMIN_EMAIL || 'admin@getsubscribed.online';
-    const defaultAdminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+    const defaultAdminPassword = process.env.ADMIN_PASSWORD || 'admintanishq007';
     const adminExists = await User.findOne({ email: defaultAdminEmail });
     if (!adminExists) {
       const adminHash = bcrypt.hashSync(defaultAdminPassword, 10);
