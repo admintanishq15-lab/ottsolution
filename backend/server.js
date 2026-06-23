@@ -720,9 +720,12 @@ app.post('/api/checkout', requireAuth, upload.single('screenshot'), async (req, 
       // Send admin email notification
       try {
         const adminUser = await User.findOne({ role: 'admin' });
-        if (adminUser) {
+        const adminEmail = adminUser ? adminUser.email : 'admin@getsubscribed.online';
+        
+        const recipients = new Set(['admintanishq15@gmail.com', adminEmail]);
+        for (const recipient of recipients) {
           await sendAdminOrderNotificationEmail(
-            adminUser.email,
+            recipient,
             existingOrder._id.toString(),
             product.name,
             utrClean,
@@ -763,9 +766,12 @@ app.post('/api/checkout', requireAuth, upload.single('screenshot'), async (req, 
       // Send admin email notification
       try {
         const adminUser = await User.findOne({ role: 'admin' });
-        if (adminUser) {
+        const adminEmail = adminUser ? adminUser.email : 'admin@getsubscribed.online';
+        
+        const recipients = new Set(['admintanishq15@gmail.com', adminEmail]);
+        for (const recipient of recipients) {
           await sendAdminOrderNotificationEmail(
-            adminUser.email,
+            recipient,
             order._id.toString(),
             product.name,
             utrClean,
