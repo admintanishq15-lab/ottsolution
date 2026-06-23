@@ -1153,7 +1153,7 @@ app.get('/api/admin/settings', requireAdmin, async (req, res) => {
 });
 
 app.put('/api/admin/settings', requireAdmin, upload.single('qr_image'), async (req, res) => {
-  const { upi_id, upi_qr_url, resend_api_key, email_from } = req.body;
+  const { upi_id, upi_qr_url, resend_api_key, email_from, show_bank_transfer } = req.body;
 
   try {
     if (upi_id !== undefined) {
@@ -1179,6 +1179,10 @@ app.put('/api/admin/settings', requireAdmin, upload.single('qr_image'), async (r
 
     if (email_from !== undefined) {
       await Setting.findOneAndUpdate({ key: 'email_from' }, { value: email_from.trim() }, { upsert: true });
+    }
+
+    if (show_bank_transfer !== undefined) {
+      await Setting.findOneAndUpdate({ key: 'show_bank_transfer' }, { value: String(show_bank_transfer).trim() }, { upsert: true });
     }
 
     res.json({ message: 'Settings updated successfully' });

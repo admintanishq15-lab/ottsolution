@@ -142,6 +142,10 @@ async function seedDefaultData() {
     if (!emailFromExists) {
       await new Setting({ key: 'email_from', value: process.env.EMAIL_FROM || 'onboarding@resend.dev' }).save();
     }
+    const showBankTransferExists = await Setting.findOne({ key: 'show_bank_transfer' });
+    if (!showBankTransferExists) {
+      await new Setting({ key: 'show_bank_transfer', value: 'true' }).save();
+    }
     console.log('[Database] Seeded default settings');
 
     // 5. Seed OTT Platforms from unique platforms in products
