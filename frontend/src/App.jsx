@@ -4,7 +4,7 @@ import ProtectedRoute from './ProtectedRoute';
 
 // API Base URL config for cross-origin (Cloudflare Pages -> Render)
 const API_BASE = import.meta.env.VITE_API_URL || 
-                 (import.meta.env.MODE === 'production' ? 'https://ottsolution.onrender.com' : '');
+                 (import.meta.env.MODE === 'production' ? 'https://getsubscribed.onrender.com' : '');
 
 // Helper to resolve image paths: prepends API_BASE to local uploads (e.g. /uploads/...)
 const resolveUrl = (url) => {
@@ -37,13 +37,13 @@ export default function App() {
   const [userOrders, setUserOrders] = useState([]);
   
   // --- Theme State ---
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+  const theme = 'light';
 
   // --- Admin States ---
   const [adminOrders, setAdminOrders] = useState([]);
   const [adminTab, setAdminTab] = useState(() => sessionStorage.getItem('adminTab') || 'orders'); // orders, products, settings
   const [settings, setSettings] = useState({
-    upi_id: 'pay@ottsolution',
+    upi_id: 'pay@getsubscribed',
     upi_qr_url: ''
   });
   const [newProduct, setNewProduct] = useState({
@@ -380,7 +380,7 @@ export default function App() {
 
   // --- Copy Clipboard Helper ---
   const handleCopyUPI = (upiId) => {
-    const textToCopy = typeof upiId === 'string' ? upiId : (settings?.upi_id || 'pay@ottsolution');
+    const textToCopy = typeof upiId === 'string' ? upiId : (settings?.upi_id || 'pay@getsubscribed');
     navigator.clipboard.writeText(textToCopy).then(() => {
       showToast('UPI ID copied to clipboard!', 'success');
     }).catch(() => {
@@ -540,7 +540,7 @@ export default function App() {
       <header className="header">
         <div className="header-container container">
           <a href="#" className="logo-link" onClick={(e) => { e.preventDefault(); setActiveCategory('all'); navigateTo('home'); }}>
-            <span className="logo-text">ott<span className="logo-alt">solution</span></span>
+            <span className="logo-text">Get<span className="logo-alt">subscribed</span></span>
           </a>
 
           <div className="search-wrapper">
@@ -592,20 +592,6 @@ export default function App() {
           {/* Desktop Navigation */}
           <div className="desktop-nav">
             {renderNotificationBell()}
-            <button 
-              className="btn btn-secondary btn-sm theme-toggle-btn"
-              onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
-              aria-label="Toggle theme"
-              style={{ display: 'inline-flex', padding: '6px', borderRadius: '50%' }}
-            >
-              {theme === 'dark' ? (
-                /* Sun Icon */
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-              ) : (
-                /* Moon Icon */
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-              )}
-            </button>
 
             <div className="auth-nav-container">
               {currentUser ? (
@@ -628,21 +614,9 @@ export default function App() {
             </div>
           </div>
 
-          {/* Mobile Header Controls (Theme Toggle + Hamburger) */}
+          {/* Mobile Header Controls (Hamburger) */}
           <div className="mobile-header-actions">
             {renderNotificationBell()}
-            <button 
-              className="btn btn-secondary btn-sm theme-toggle-btn"
-              onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
-              aria-label="Toggle theme"
-              style={{ display: 'inline-flex', padding: '6px', borderRadius: '50%' }}
-            >
-              {theme === 'dark' ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-              )}
-            </button>
 
             <button 
               className="btn btn-secondary btn-sm hamburger-btn"
@@ -1034,7 +1008,7 @@ export default function App() {
           gap: '20px' 
         }}>
           <div>
-            <strong>ottsolution</strong> © {new Date().getFullYear()}. All Rights Reserved.
+            <strong>Getsubscribed</strong> © {new Date().getFullYear()}. All Rights Reserved.
           </div>
           <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
             <a href="#about" onClick={(e) => { e.preventDefault(); navigateTo('about'); }} style={{ color: 'var(--text-muted)' }}>About Us</a>
@@ -1356,10 +1330,10 @@ export default function App() {
         const completedOrder = userOrders && userOrders.find(o => o.status === 'approved');
         const latestOrderUtr = completedOrder ? completedOrder.utr_number : (userOrders && userOrders.length > 0 ? userOrders[0].utr_number : '');
         const waPrefillText = completedOrder
-          ? `Hello ottsolution Support! My order is completed (Reference UTR: ${completedOrder.utr_number}) and I would like to chat.`
+          ? `Hello Getsubscribed Support! My order is completed (Reference UTR: ${completedOrder.utr_number}) and I would like to chat.`
           : (latestOrderUtr 
-            ? `Hello ottsolution Support! I have a question regarding my order (UTR Reference: ${latestOrderUtr}).`
-            : 'Hello ottsolution Support! I have a question about your services...');
+            ? `Hello Getsubscribed Support! I have a question regarding my order (UTR Reference: ${latestOrderUtr}).`
+            : 'Hello Getsubscribed Support! I have a question about your services...');
         const waLink = `https://wa.me/917017750272?text=${encodeURIComponent(waPrefillText)}`;
 
         return (
@@ -1380,8 +1354,8 @@ export default function App() {
               }}>
                 {/* Header */}
                 <div style={{
-                  backgroundColor: '#000000',
-                  color: '#ffffff',
+                  backgroundColor: 'var(--primary)',
+                  color: 'var(--primary-text)',
                   padding: '16px',
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -1389,7 +1363,7 @@ export default function App() {
                   borderBottom: '1px solid var(--border-color)'
                 }}>
                   <div>
-                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '700', letterSpacing: '0.03em' }}>ottsolution Support</h4>
+                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '700', letterSpacing: '0.03em' }}>Getsubscribed Support</h4>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
                       <span style={{ display: 'inline-block', width: '8px', height: '8px', backgroundColor: '#4caf50', borderRadius: '50%', animation: 'pulse 1.5s infinite' }}></span>
                       <span style={{ fontSize: '11px', color: '#a1a1aa' }}>Agent Online</span>
@@ -1710,11 +1684,11 @@ function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUP
               const isEUR = cur === '€' || cur.toUpperCase() === 'EUR';
 
               if (isINR) {
-                const upiId = settings?.upi_id || 'pay@ottsolution';
+                const upiId = settings?.upi_id || 'pay@getsubscribed';
                 const upiQrUrl = settings?.upi_qr_url;
                 const qrSrc = upiQrUrl 
                   ? resolveUrl(upiQrUrl) 
-                  : `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`upi://pay?pa=${upiId}&pn=ottsolution`)}`;
+                  : `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`upi://pay?pa=${upiId}&pn=Getsubscribed`)}`;
 
                 return (
                   <>
@@ -1736,10 +1710,10 @@ function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUP
                       <span className="or-separator">OR pay via Bank Transfer</span>
                       <table className="bank-table">
                         <tbody>
-                          <tr><td>Bank Name:</td><td><strong>ottsolution Bank (India)</strong></td></tr>
-                          <tr><td>Account Name:</td><td><strong>ottsolution Subscriptions Ltd</strong></td></tr>
+                          <tr><td>Bank Name:</td><td><strong>Getsubscribed Bank (India)</strong></td></tr>
+                          <tr><td>Account Name:</td><td><strong>Getsubscribed Subscriptions Ltd</strong></td></tr>
                           <tr><td>Account No:</td><td><strong>9900887766</strong></td></tr>
-                          <tr><td>IFSC Code:</td><td><strong>OTTB000123</strong></td></tr>
+                          <tr><td>IFSC Code:</td><td><strong>GSUB000123</strong></td></tr>
                         </tbody>
                       </table>
                     </div>
@@ -1754,10 +1728,10 @@ function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUP
                     </p>
                     <table className="bank-table" style={{ width: '100%', marginTop: '10px' }}>
                       <tbody>
-                        <tr><td>Bank Name:</td><td><strong>ottsolution Europe Bank</strong></td></tr>
+                        <tr><td>Bank Name:</td><td><strong>Getsubscribed Europe Bank</strong></td></tr>
                         <tr><td>IBAN:</td><td><strong>BE89 3704 0044 0532 0130</strong></td></tr>
-                        <tr><td>BIC / SWIFT:</td><td><strong>OTTBBE22XXX</strong></td></tr>
-                        <tr><td>Account Name:</td><td><strong>ottsolution Subscriptions Ltd</strong></td></tr>
+                        <tr><td>BIC / SWIFT:</td><td><strong>GSUBBE22XXX</strong></td></tr>
+                        <tr><td>Account Name:</td><td><strong>Getsubscribed Subscriptions Ltd</strong></td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -1770,12 +1744,12 @@ function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUP
                       Send invoice amount to our PayPal account:
                     </p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px', marginBottom: '15px' }}>
-                      <strong className="upi-id-badge" style={{ margin: 0 }}>paypal@ottsolution.com</strong>
+                      <strong className="upi-id-badge" style={{ margin: 0 }}>paypal@getsubscribed.online</strong>
                       <button 
                         type="button" 
                         className="btn btn-sm btn-secondary" 
                         onClick={() => {
-                          navigator.clipboard.writeText('paypal@ottsolution.com').then(() => {
+                          navigator.clipboard.writeText('paypal@getsubscribed.online').then(() => {
                             showToast('PayPal email copied!', 'success');
                           });
                         }}
@@ -1786,11 +1760,11 @@ function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUP
                     <span className="or-separator">OR pay via Bank Wire (USD)</span>
                     <table className="bank-table" style={{ width: '100%', marginTop: '10px' }}>
                       <tbody>
-                        <tr><td>Bank Name:</td><td><strong>ottsolution US Bank</strong></td></tr>
+                        <tr><td>Bank Name:</td><td><strong>Getsubscribed US Bank</strong></td></tr>
                         <tr><td>Routing No:</td><td><strong>021000021</strong></td></tr>
                         <tr><td>Account No:</td><td><strong>123456789012</strong></td></tr>
-                        <tr><td>Swift Code:</td><td><strong>OTTBUS33XXX</strong></td></tr>
-                        <tr><td>Beneficiary:</td><td><strong>ottsolution Subscriptions LLC</strong></td></tr>
+                        <tr><td>Swift Code:</td><td><strong>GSUBUS33XXX</strong></td></tr>
+                        <tr><td>Beneficiary:</td><td><strong>Getsubscribed Subscriptions LLC</strong></td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -1898,7 +1872,7 @@ function UserOrdersView({ orders, currentUser, showToast }) {
                       Need Help? Chat on WhatsApp
                     </a>
                     <a 
-                      href={`mailto:support@ottsolution.com?subject=${encodeURIComponent(`Help Request - UTR: ${order.utr_number}`)}&body=${encodeURIComponent(`Hello support team!\n\nI need help with my order.\n\nOrder Details:\nItem Name: ${order.product_name}\nQuantity: 1\nUTR Reference: ${order.utr_number}\n\nThank you!`)}`} 
+                      href={`mailto:support@getsubscribed.online?subject=${encodeURIComponent(`Help Request - UTR: ${order.utr_number}`)}&body=${encodeURIComponent(`Hello support team!\n\nI need help with my order.\n\nOrder Details:\nItem Name: ${order.product_name}\nQuantity: 1\nUTR Reference: ${order.utr_number}\n\nThank you!`)}`} 
                       style={{ fontSize: '12px', color: 'var(--text-muted)', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                     >
                       ✉ Need Help? Contact via Email
@@ -2003,7 +1977,7 @@ function UserOrdersView({ orders, currentUser, showToast }) {
                                     Go to WhatsApp for Login
                                   </a>
                                   <a 
-                                    href={`mailto:support@ottsolution.com?subject=${encodeURIComponent(`Login Setup Request - UTR: ${order.utr_number}`)}&body=${encodeURIComponent(`Hello support team!\n\nI need to set up my Login with Code subscription.\n\nOrder Details:\nItem Name: ${order.product_name}\nQuantity: 1\nUTR Reference: ${order.utr_number}\n\nThank you!`)}`} 
+                                    href={`mailto:support@getsubscribed.online?subject=${encodeURIComponent(`Login Setup Request - UTR: ${order.utr_number}`)}&body=${encodeURIComponent(`Hello support team!\n\nI need to set up my Login with Code subscription.\n\nOrder Details:\nItem Name: ${order.product_name}\nQuantity: 1\nUTR Reference: ${order.utr_number}\n\nThank you!`)}`} 
                                     className="btn btn-secondary btn-xs" 
                                     style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
                                   >
@@ -3464,7 +3438,7 @@ function AdminPanelView({
                   <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '8px' }}>QR Code Preview:</span>
                   <div style={{ display: 'flex', justifyContent: 'center', backgroundColor: '#fff', padding: '15px', borderRadius: '4px', border: '1px solid var(--border-color)', width: 'fit-content' }}>
                     <img 
-                      src={resolveUrl(settings?.upi_qr_url) || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`upi://pay?pa=${settings?.upi_id || 'pay@ottsolution'}&pn=ottsolution`)}`}
+                      src={resolveUrl(settings?.upi_qr_url) || `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`upi://pay?pa=${settings?.upi_id || 'pay@getsubscribed'}&pn=Getsubscribed`)}`}
                       alt="Active QR Code" 
                       style={{ width: '150px', height: '150px', objectFit: 'contain' }}
                     />
@@ -4050,14 +4024,14 @@ function AboutView() {
       </div>
       <div className="content-card" style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '30px', lineHeight: '1.8' }}>
         <p style={{ marginBottom: '20px', fontSize: '1.1rem' }}>
-          Welcome to <strong>ottsolution</strong>, your premier marketplace for premium digital entertainment, streaming accounts, and software credentials. 
+          Welcome to <strong>Getsubscribed</strong>, your premier marketplace for premium digital entertainment, streaming accounts, and software credentials. 
         </p>
         <p style={{ marginBottom: '20px' }}>
           We specialize in providing secure, affordable, and instant access keys and group subscriptions to the world's leading OTT and SaaS platforms. By pooling subscription accounts and managing inventory efficiently, we enable users to enjoy premium streaming services at a fraction of the cost, with 100% legal, genuine, and verified invite links.
         </p>
         <h3 style={{ marginTop: '30px', marginBottom: '15px', color: 'var(--text-main)', textTransform: 'uppercase', fontSize: '1.2rem', letterSpacing: '0.05em' }}>Our Vision</h3>
         <p style={{ marginBottom: '20px' }}>
-          At ottsolution, we believe premium entertainment and digital tools should be accessible to everyone, everywhere. We bridge the gap between high subscription costs and budget-conscious consumers by offering secure, automated group subscription sharing and instant key delivery.
+          At Getsubscribed, we believe premium entertainment and digital tools should be accessible to everyone, everywhere. We bridge the gap between high subscription costs and budget-conscious consumers by offering secure, automated group subscription sharing and instant key delivery.
         </p>
         <h3 style={{ marginTop: '30px', marginBottom: '15px', color: 'var(--text-main)', textTransform: 'uppercase', fontSize: '1.2rem', letterSpacing: '0.05em' }}>Why Choose Us?</h3>
         <ul style={{ paddingLeft: '20px', marginBottom: '20px' }}>
@@ -4091,11 +4065,11 @@ function ContactView() {
             </p>
             <p style={{ marginBottom: '10px' }}>
               <strong>Email Support:</strong><br />
-              <a href="mailto:support@ottsolution.com" style={{ textDecoration: 'underline' }}>support@ottsolution.com</a>
+              <a href="mailto:support@getsubscribed.online" style={{ textDecoration: 'underline' }}>support@getsubscribed.online</a>
             </p>
             <p style={{ marginBottom: '10px' }}>
               <strong>Business Inquiries:</strong><br />
-              <a href="mailto:admin@ott.com" style={{ textDecoration: 'underline' }}>admin@ott.com</a>
+              <a href="mailto:admin@getsubscribed.online" style={{ textDecoration: 'underline' }}>admin@getsubscribed.online</a>
             </p>
           </div>
           
@@ -4103,7 +4077,7 @@ function ContactView() {
             <h4 style={{ textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '15px', color: 'var(--text-main)' }}>Merchant Details</h4>
             <p style={{ marginBottom: '10px' }}>
               <strong>Registered Office:</strong><br />
-              ottsolution Ltd.<br />
+              Getsubscribed Ltd.<br />
               15/342, Minimalist Tower, Civil Lines,<br />
               Uttar Pradesh, India - 208001
             </p>
@@ -4128,7 +4102,7 @@ function SafetyView() {
       <div className="content-card" style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '30px', lineHeight: '1.8' }}>
         <h3 style={{ marginBottom: '15px', color: 'var(--text-main)', textTransform: 'uppercase', fontSize: '1.2rem', letterSpacing: '0.05em' }}>1. Secure Checkout</h3>
         <p style={{ marginBottom: '20px' }}>
-          At ottsolution, payment security is our top priority. We use strict verification rules and transaction matching to prevent unauthorized charges. We never store sensitive banking or PayPal credentials on our servers. All credit card processing and PayPal transactions are redirected through authorized, encrypted payment gateway channels.
+          At Getsubscribed, payment security is our top priority. We use strict verification rules and transaction matching to prevent unauthorized charges. We never store sensitive banking or PayPal credentials on our servers. All credit card processing and PayPal transactions are redirected through authorized, encrypted payment gateway channels.
         </p>
 
         <h3 style={{ marginTop: '30px', marginBottom: '15px', color: 'var(--text-main)', textTransform: 'uppercase', fontSize: '1.2rem', letterSpacing: '0.05em' }}>2. Buyer Protection</h3>
@@ -4140,7 +4114,7 @@ function SafetyView() {
         <ul style={{ paddingLeft: '20px', marginBottom: '20px' }}>
           <li style={{ marginBottom: '10px' }}><strong>Defective Credentials:</strong> If an invite link or access credential fails to work upon delivery, we will issue a replacement link or a full refund within 48 hours of verification.</li>
           <li style={{ marginBottom: '10px' }}><strong>Service Outages:</strong> If a premium subscription encounters an outage and our support team cannot restore access within 24 hours, we will issue a pro-rata refund for the unused duration of the subscription.</li>
-          <li style={{ marginBottom: '10px' }}><strong>How to Claim:</strong> To file a claim, simply contact our WhatsApp support or email `support@ottsolution.com` with your order ID and transaction UTR Reference.</li>
+          <li style={{ marginBottom: '10px' }}><strong>How to Claim:</strong> To file a claim, simply contact our WhatsApp support or email `support@getsubscribed.online` with your order ID and transaction UTR Reference.</li>
         </ul>
       </div>
     </section>
@@ -4159,7 +4133,7 @@ function TermsView() {
         
         <h3 style={{ marginTop: '20px', marginBottom: '10px', color: 'var(--text-main)', textTransform: 'uppercase', fontSize: '1.1rem', letterSpacing: '0.05em' }}>1. Agreement to Terms</h3>
         <p style={{ marginBottom: '20px' }}>
-          By accessing and placing an order on our storefront (ottsolution), you agree to be bound by these Terms and Conditions. If you do not agree, please do not use our services.
+          By accessing and placing an order on our storefront (Getsubscribed), you agree to be bound by these Terms and Conditions. If you do not agree, please do not use our services.
         </p>
 
         <h3 style={{ marginTop: '20px', marginBottom: '10px', color: 'var(--text-main)', textTransform: 'uppercase', fontSize: '1.1rem', letterSpacing: '0.05em' }}>2. Purchase & Billing</h3>
@@ -4179,7 +4153,7 @@ function TermsView() {
 
         <h3 style={{ marginTop: '20px', marginBottom: '10px', color: 'var(--text-main)', textTransform: 'uppercase', fontSize: '1.1rem', letterSpacing: '0.05em' }}>5. Limitation of Liability</h3>
         <p style={{ marginBottom: '20px' }}>
-          ottsolution is not affiliated directly with Netflix, Spotify, Prime, or other brand names. We only facilitate legal family-group sharing slots. In no event shall ottsolution be liable for any indirect or consequential damages arising from service outages on third-party platforms.
+          Getsubscribed is not affiliated directly with Netflix, Spotify, Prime, or other brand names. We only facilitate legal family-group sharing slots. In no event shall Getsubscribed be liable for any indirect or consequential damages arising from service outages on third-party platforms.
         </p>
       </div>
     </section>

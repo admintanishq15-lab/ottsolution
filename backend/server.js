@@ -27,8 +27,8 @@ app.use(
       const allowedOrigins = [
         'http://localhost:5173',
         'http://localhost:3000',
-        'https://ottsolution.online',
-        'https://ottsolution.pages.dev'
+        'https://getsubscribed.online',
+        'https://getsubscribed.pages.dev'
       ];
       
       if (process.env.FRONTEND_URL) {
@@ -249,41 +249,41 @@ async function sendInviteEmail(toEmail, inviteLink, productName, currency, price
     }
 
     const emailHtml = `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px; border: 1px solid #e4e4e7; border-radius: 8px; background-color: #ffffff; color: #18181b;">
-        <h2 style="font-size: 20px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #18181b; padding-bottom: 15px; margin-top: 0; color: #000000;">
-          OTT<span style="color: #71717a;">Solution</span>
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px; border: 1px solid #e2e4e1; border-radius: 8px; background-color: #ffffff; color: #1c281b;">
+        <h2 style="font-size: 20px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #457245; padding-bottom: 15px; margin-top: 0; color: #1c281b;">
+          Get<span style="color: #457245;">subscribed</span>
         </h2>
-        <p style="font-size: 15px; line-height: 1.5; color: #3f3f46; margin-top: 20px;">
+        <p style="font-size: 15px; line-height: 1.5; color: #5e685d; margin-top: 20px;">
           Thank you for your order! Your payment has been successfully verified, and your digital access is ready.
         </p>
-        <div style="background-color: #f4f4f5; border: 1px solid #e4e4e7; border-radius: 4px; padding: 15px; margin: 20px 0;">
+        <div style="background-color: #f7f6f0; border: 1px solid #e2e4e1; border-radius: 4px; padding: 15px; margin: 20px 0;">
           <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
             <tr>
-              <td style="color: #71717a; padding: 4px 0;">Product:</td>
-              <td style="font-weight: bold; text-align: right; padding: 4px 0;">${productName}</td>
+              <td style="color: #5e685d; padding: 4px 0;">Product:</td>
+              <td style="font-weight: bold; text-align: right; padding: 4px 0; color: #1c281b;">${productName}</td>
             </tr>
             <tr>
-              <td style="color: #71717a; padding: 4px 0;">Amount Paid:</td>
-              <td style="font-weight: bold; text-align: right; padding: 4px 0;">${currency}${price.toFixed(2)}</td>
+              <td style="color: #5e685d; padding: 4px 0;">Amount Paid:</td>
+              <td style="font-weight: bold; text-align: right; padding: 4px 0; color: #1c281b;">${currency}${price.toFixed(2)}</td>
             </tr>
           </table>
         </div>
         
-        <p style="font-size: 14px; color: #3f3f46; margin: 25px 0 10px 0;">
+        <p style="font-size: 14px; color: #5e685d; margin: 25px 0 10px 0;">
           Click the button below to join your Premium group subscription or claim your access key:
         </p>
         
-        <a href="${inviteLink}" target="_blank" style="display: block; text-align: center; background-color: #000000; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 14px; padding: 12px 24px; border-radius: 4px; margin: 20px 0 30px 0;">
+        <a href="${inviteLink}" target="_blank" style="display: block; text-align: center; background-color: #457245; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 14px; padding: 12px 24px; border-radius: 4px; margin: 20px 0 30px 0;">
           Claim Access / Join Family Group
         </a>
         
-        <p style="font-size: 12px; color: #71717a; line-height: 1.4; margin-bottom: 0;">
+        <p style="font-size: 12px; color: #5e685d; line-height: 1.4; margin-bottom: 0;">
           If the button above does not work, copy and paste this link into your browser:<br/>
-          <a href="${inviteLink}" style="color: #18181b; word-break: break-all;">${inviteLink}</a>
+          <a href="${inviteLink}" style="color: #457245; word-break: break-all;">${inviteLink}</a>
         </p>
-        <hr style="border: 0; border-top: 1px solid #e4e4e7; margin: 30px 0 20px 0;" />
-        <p style="font-size: 11px; text-align: center; color: #a1a1aa; margin: 0;">
-          OTT Solution Subscriptions Ltd. Secured Digital Delivery.
+        <hr style="border: 0; border-top: 1px solid #e2e4e1; margin: 30px 0 20px 0;" />
+        <p style="font-size: 11px; text-align: center; color: #5e685d; margin: 0;">
+          Getsubscribed Subscriptions Ltd. Secured Digital Delivery.
         </p>
       </div>
     `;
@@ -297,9 +297,9 @@ async function sendInviteEmail(toEmail, inviteLink, productName, currency, price
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: `OTT Solution <${emailFrom}>`,
+        from: `Getsubscribed <${emailFrom}>`,
         to: toEmail,
-        subject: `Your ${productName} Invitation / Key - OTT Solution`,
+        subject: `Your ${productName} Invitation / Key - Getsubscribed`,
         html: emailHtml
       })
     });

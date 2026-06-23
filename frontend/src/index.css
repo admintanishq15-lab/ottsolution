@@ -1,66 +1,36 @@
 /* ==========================================================================
-   ottsolution - Professional Minimalist CSS Design System (Monochrome)
+   Getsubscribed - Premium Organic Light CSS Design System
    ========================================================================== */
 
-/* Design Tokens & Theme Variables */
-html.dark {
-  --bg-app: #09070f;
-  --bg-surface: #100e17;
-  --bg-surface-elevated: #181522;
-  --text-main: #f4f4f6;
-  --text-muted: #9c99a6;
-  --border-color: #232031;
-  --border-glow: rgba(124, 58, 237, 0.05);
+/* Design Tokens & Theme Variables (Organic Light Theme - Getsubscribed) */
+html.dark, html.light {
+  --bg-app: #f7f6f0;            /* Warm Ivory Cream */
+  --bg-surface: #ffffff;        /* Pure White */
+  --bg-surface-elevated: #eaf0e9; /* Light Sage Green */
+  --text-main: #1c281b;         /* Deep Forest Charcoal */
+  --text-muted: #5e685d;        /* Muted Sage */
+  --border-color: #e2e4e1;      /* Light Organic Gray */
+  --border-glow: rgba(69, 114, 69, 0.04);
   
-  --primary: #7c3aed;
-  --primary-hover: #6d28d9;
+  --primary: #457245;           /* Rich Organic Green */
+  --primary-hover: #375c37;     /* Darker Green */
   --primary-text: #ffffff;
-  --primary-glow: rgba(124, 58, 237, 0.2);
+  --primary-glow: rgba(69, 114, 69, 0.1);
   
-  --success: #10b981;
-  --success-bg: rgba(16, 185, 129, 0.08);
-  --warning: #f59e0b;
-  --warning-bg: rgba(245, 158, 11, 0.08);
-  --danger: #ef4444;
-  --danger-bg: rgba(239, 68, 68, 0.08);
+  --success: #2e592e;
+  --success-bg: #e2ede2;
+  --warning: #a87313;
+  --warning-bg: #f9f2e5;
+  --danger: #b33939;
+  --danger-bg: #fbebeb;
   
-  --header-bg: rgba(9, 7, 15, 0.8);
-  --input-bg: #09070f;
+  --header-bg: rgba(247, 246, 240, 0.85); /* Frosty Warm Ivory */
+  --input-bg: #ffffff;
   
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.7);
-  --card-shadow-hover: 0 0 12px 1px rgba(124, 58, 237, 0.25);
-}
-
-html.light {
-  --bg-app: #fbfbfe;
-  --bg-surface: #f5f4fa;
-  --bg-surface-elevated: #edeaf4;
-  --text-main: #0c0a1a;
-  --text-muted: #68657a;
-  --border-color: #e0dce9;
-  --border-glow: rgba(124, 58, 237, 0.02);
-  
-  --primary: #7c3aed;
-  --primary-hover: #6d28d9;
-  --primary-text: #ffffff;
-  --primary-glow: rgba(124, 58, 237, 0.08);
-  
-  --success: #059669;
-  --success-bg: rgba(5, 150, 105, 0.06);
-  --warning: #d97706;
-  --warning-bg: rgba(217, 119, 6, 0.06);
-  --danger: #dc2626;
-  --danger-bg: rgba(220, 38, 38, 0.06);
-  
-  --header-bg: rgba(251, 251, 254, 0.8);
-  --input-bg: #fbfbfe;
-  
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.02);
-  --shadow-md: 0 2px 4px 0 rgba(0, 0, 0, 0.02);
-  --shadow-lg: 0 4px 12px 0 rgba(0, 0, 0, 0.03);
-  --card-shadow-hover: 0 0 12px 1px rgba(124, 58, 237, 0.15);
+  --shadow-sm: 0 1px 3px rgba(28, 40, 27, 0.05);
+  --shadow-md: 0 4px 12px rgba(28, 40, 27, 0.08);
+  --shadow-lg: 0 12px 24px rgba(28, 40, 27, 0.12);
+  --card-shadow-hover: 0 8px 24px rgba(69, 114, 69, 0.15);
 }
 
 /* Base Resets */

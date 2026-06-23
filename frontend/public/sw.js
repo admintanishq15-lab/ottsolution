@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ottsolution-cache-v4';
+const CACHE_NAME = 'getsubscribed-cache-v1';
 const ASSETS = [
   '/',
   '/index.html',

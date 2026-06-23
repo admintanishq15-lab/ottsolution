@@ -25,7 +25,7 @@ mongoose.connect(mongoURI)
 async function seedDefaultData() {
   try {
     // 1. Seed Default Admin
-    const defaultAdminEmail = process.env.ADMIN_EMAIL || 'admin@ott.com';
+    const defaultAdminEmail = process.env.ADMIN_EMAIL || 'admin@getsubscribed.online';
     const defaultAdminPassword = process.env.ADMIN_PASSWORD || 'admin123';
     const adminExists = await User.findOne({ email: defaultAdminEmail });
     if (!adminExists) {
@@ -46,15 +46,15 @@ async function seedDefaultData() {
     }
 
     // 2. Seed Default User
-    const userExists = await User.findOne({ email: 'user@ott.com' });
+    const userExists = await User.findOne({ email: 'user@getsubscribed.online' });
     if (!userExists) {
       const userHash = bcrypt.hashSync('user123', 10);
       await new User({
-        email: 'user@ott.com',
+        email: 'user@getsubscribed.online',
         password_hash: userHash,
         role: 'user'
       }).save();
-      console.log('[Database] Seeded default user: user@ott.com / user123');
+      console.log('[Database] Seeded default user: user@getsubscribed.online / user123');
     }
 
     // 3. Seed Default Products
@@ -124,9 +124,9 @@ async function seedDefaultData() {
     // 4. Seed Default Settings
     const upiIdExists = await Setting.findOne({ key: 'upi_id' });
     if (!upiIdExists) {
-      await new Setting({ key: 'upi_id', value: process.env.UPI_ID || 'pay@ottsolution' }).save();
+      await new Setting({ key: 'upi_id', value: process.env.UPI_ID || 'pay@getsubscribed' }).save();
     } else if (upiIdExists.value.includes('nexus') || upiIdExists.value.includes('nexsus')) {
-      upiIdExists.value = process.env.UPI_ID || 'pay@ottsolution';
+      upiIdExists.value = process.env.UPI_ID || 'pay@getsubscribed';
       await upiIdExists.save();
       console.log(`[Database] Updated legacy upi_id to: ${upiIdExists.value}`);
     }
