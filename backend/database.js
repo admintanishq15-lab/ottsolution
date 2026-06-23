@@ -146,6 +146,27 @@ async function seedDefaultData() {
     if (!showBankTransferExists) {
       await new Setting({ key: 'show_bank_transfer', value: 'true' }).save();
     }
+    const bankDetailsInrExists = await Setting.findOne({ key: 'bank_details_inr' });
+    if (!bankDetailsInrExists) {
+      await new Setting({ 
+        key: 'bank_details_inr', 
+        value: "Bank Name: Getsubscribed Bank (India)\nAccount Name: Getsubscribed Subscriptions Ltd\nAccount No: 9900887766\nIFSC Code: GSUB000123" 
+      }).save();
+    }
+    const bankDetailsEurExists = await Setting.findOne({ key: 'bank_details_eur' });
+    if (!bankDetailsEurExists) {
+      await new Setting({ 
+        key: 'bank_details_eur', 
+        value: "Bank Name: Getsubscribed Europe Bank\nIBAN: BE89 3704 0044 0532 0130\nBIC / SWIFT: GSUBBE22XXX\nAccount Name: Getsubscribed Subscriptions Ltd" 
+      }).save();
+    }
+    const bankDetailsUsdExists = await Setting.findOne({ key: 'bank_details_usd' });
+    if (!bankDetailsUsdExists) {
+      await new Setting({ 
+        key: 'bank_details_usd', 
+        value: "Bank Name: Getsubscribed US Bank\nRouting No: 021000021\nAccount No: 123456789012\nSwift Code: GSUBUS33XXX\nBeneficiary: Getsubscribed Subscriptions LLC" 
+      }).save();
+    }
     console.log('[Database] Seeded default settings');
 
     // 5. Seed OTT Platforms from unique platforms in products

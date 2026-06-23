@@ -1706,8 +1706,6 @@ function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUP
             {(() => {
               const cur = product.currency || '$';
               const isINR = cur === '₹' || cur.toUpperCase() === 'INR';
-              const isEUR = cur === '€' || cur.toUpperCase() === 'EUR';
-              const showBank = settings?.show_bank_transfer !== 'false';
 
               if (isINR) {
                 const upiId = settings?.upi_id || 'pay@getsubscribed';
@@ -1731,38 +1729,7 @@ function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUP
                         <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleCopyUPI(upiId)}>Copy UPI ID</button>
                       </div>
                     </div>
-
-                    {showBank && (
-                      <div className="bank-details-section">
-                        <span className="or-separator">OR pay via Bank Transfer</span>
-                        <table className="bank-table">
-                          <tbody>
-                            <tr><td>Bank Name:</td><td><strong>Getsubscribed Bank (India)</strong></td></tr>
-                            <tr><td>Account Name:</td><td><strong>Getsubscribed Subscriptions Ltd</strong></td></tr>
-                            <tr><td>Account No:</td><td><strong>9900887766</strong></td></tr>
-                            <tr><td>IFSC Code:</td><td><strong>GSUB000123</strong></td></tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
                   </>
-                );
-              } else if (isEUR && showBank) {
-                return (
-                  <div className="sepa-details-section" style={{ width: '100%' }}>
-                    <span className="or-separator">SEPA Bank Transfer (Eurozone)</span>
-                    <p className="payment-instructions" style={{ fontSize: '13px', marginTop: '5px' }}>
-                      Transfer exact invoice amount to the European IBAN account:
-                    </p>
-                    <table className="bank-table" style={{ width: '100%', marginTop: '10px' }}>
-                      <tbody>
-                        <tr><td>Bank Name:</td><td><strong>Getsubscribed Europe Bank</strong></td></tr>
-                        <tr><td>IBAN:</td><td><strong>BE89 3704 0044 0532 0130</strong></td></tr>
-                        <tr><td>BIC / SWIFT:</td><td><strong>GSUBBE22XXX</strong></td></tr>
-                        <tr><td>Account Name:</td><td><strong>Getsubscribed Subscriptions Ltd</strong></td></tr>
-                      </tbody>
-                    </table>
-                  </div>
                 );
               } else {
                 return (
@@ -1785,20 +1752,6 @@ function CheckoutView({ product, apiRequest, showToast, navigateTo, handleCopyUP
                         Copy Email
                       </button>
                     </div>
-                    {showBank && (
-                      <>
-                        <span className="or-separator">OR pay via Bank Wire (USD)</span>
-                        <table className="bank-table" style={{ width: '100%', marginTop: '10px' }}>
-                          <tbody>
-                            <tr><td>Bank Name:</td><td><strong>Getsubscribed US Bank</strong></td></tr>
-                            <tr><td>Routing No:</td><td><strong>021000021</strong></td></tr>
-                            <tr><td>Account No:</td><td><strong>123456789012</strong></td></tr>
-                            <tr><td>Swift Code:</td><td><strong>GSUBUS33XXX</strong></td></tr>
-                            <tr><td>Beneficiary:</td><td><strong>Getsubscribed Subscriptions LLC</strong></td></tr>
-                          </tbody>
-                        </table>
-                      </>
-                    )}
                   </div>
                 );
               }
@@ -2123,7 +2076,6 @@ function AdminPanelView({
   const [qrImageFile, setQrImageFile] = useState(null);
   const [resendApiKeyInput, setResendApiKeyInput] = useState(settings?.resend_api_key || '');
   const [emailFromInput, setEmailFromInput] = useState(settings?.email_from || '');
-  const [showBankTransferInput, setShowBankTransferInput] = useState(settings?.show_bank_transfer !== 'false');
 
   // Reconciliation states
   const [utrText, setUtrText] = useState('');
@@ -2346,7 +2298,6 @@ function AdminPanelView({
       setUpiQrUrlInput(settings.upi_qr_url || '');
       setResendApiKeyInput(settings.resend_api_key || '');
       setEmailFromInput(settings.email_from || '');
-      setShowBankTransferInput(settings.show_bank_transfer !== 'false');
     }
   }, [settings]);
 
@@ -2594,7 +2545,6 @@ function AdminPanelView({
             }
             formData.append('resend_api_key', resendApiKeyInput);
             formData.append('email_from', emailFromInput);
-            formData.append('show_bank_transfer', String(showBankTransferInput));
             data = await apiRequest('/api/admin/settings', {
               method: 'PUT',
               body: formData
@@ -2607,8 +2557,7 @@ function AdminPanelView({
                 upi_id: upiIdInput,
                 upi_qr_url: upiQrUrlInput,
                 resend_api_key: resendApiKeyInput,
-                email_from: emailFromInput,
-                show_bank_transfer: String(showBankTransferInput)
+                email_from: emailFromInput
               })
             });
           }
@@ -3442,18 +3391,7 @@ function AdminPanelView({
                   <span className="input-help">Must be a verified sender domain/email on your Resend dashboard.</span>
                 </div>
 
-                <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '15px' }}>
-                  <input 
-                    type="checkbox" 
-                    id="admin-settings-show-bank" 
-                    checked={showBankTransferInput}
-                    onChange={(e) => setShowBankTransferInput(e.target.checked)}
-                    style={{ width: 'auto', cursor: 'pointer' }}
-                  />
-                  <label htmlFor="admin-settings-show-bank" style={{ margin: 0, cursor: 'pointer', fontSize: '0.85rem' }}>
-                    Enable Bank Transfer Payment Options
-                  </label>
-                </div>
+
 
                 <button type="submit" className="btn btn-primary btn-block" style={{ marginTop: '15px' }}>
                   Save System Settings
@@ -3483,10 +3421,7 @@ function AdminPanelView({
                   <code>{settings?.email_from || 'onboarding@resend.dev'}</code>
                 </div>
 
-                <div style={{ paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
-                  <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Bank Transfer Option:</span>
-                  <strong>{settings?.show_bank_transfer !== 'false' ? '✓ Enabled' : '✗ Disabled'}</strong>
-                </div>
+
                 
                 <div>
                   <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '8px' }}>QR Code Preview:</span>
