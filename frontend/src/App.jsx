@@ -33,7 +33,14 @@ export default function App() {
   const [activeCategory, setActiveCategory] = useState(() => sessionStorage.getItem('activeCategory') || 'all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [activeView, setActiveView] = useState(() => sessionStorage.getItem('activeView') || 'home'); // home, details, checkout, login, register, orders, admin
+  const [activeView, setActiveView] = useState(() => {
+    const path = window.location.pathname.replace(/^\/|\/$/g, '');
+    const validViews = ['about', 'contact', 'safety', 'terms', 'login', 'register', 'orders', 'admin'];
+    if (validViews.includes(path)) {
+      return path;
+    }
+    return sessionStorage.getItem('activeView') || 'home';
+  }); // home, details, checkout, login, register, orders, admin
   const [userOrders, setUserOrders] = useState([]);
   
   // --- Theme State ---
@@ -115,6 +122,16 @@ export default function App() {
     loadProducts();
     loadSettings();
     logVisit();
+
+    const handlePopState = (event) => {
+      const view = event.state?.view || 'home';
+      setActiveView(view);
+    };
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
   }, []);
 
   useEffect(() => {
@@ -375,6 +392,14 @@ export default function App() {
     }
     
     setActiveView(viewName);
+    sessionStorage.setItem('activeView', viewName);
+    
+    // Update browser history path for SEO and direct link support
+    const path = viewName === 'home' ? '/' : `/${viewName}`;
+    if (window.location.pathname !== path) {
+      window.history.pushState({ view: viewName }, '', path);
+    }
+    
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
